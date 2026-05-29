@@ -153,12 +153,15 @@ export type RestartEcho = { kind: 'resumed'; count: number } | { kind: 'restarte
  * (drain timeout → wait-for-idle, nothing interrupted) NOTHING resumed, so it
  * must show plain "restarted" — never a false resume claim. Returns null once
  * the event ages out of the freshness window (or if there's no completion).
+ *
+ * Date.now() is called inside the function body so callers don't trigger
+ * react-hooks/purity warnings by calling it during render.
  */
-export function restartEcho(signal: RestartEchoSignal | undefined, now: number): RestartEcho {
+export function restartEcho(signal: RestartEchoSignal | undefined): RestartEcho {
   if (!signal?.completedAt) return null;
   if (signal.status === 'blocked') return null;
   const completed = Date.parse(signal.completedAt);
-  if (!Number.isFinite(completed) || now - completed > RESTART_ECHO_FRESH_MS) return null;
+  if (!Number.isFinite(completed) || Date.now() - completed > RESTART_ECHO_FRESH_MS) return null;
   if (signal.mode === 'drain-active' && !signal.fallbackToIdle && (signal.resumedCount ?? 0) > 0) {
     return { kind: 'resumed', count: signal.resumedCount ?? 0 };
   }
@@ -194,7 +197,7 @@ export function RestartEchoToast() {
   });
   const completedAt = info?.lastRestart?.completedAt;
   const echo = useMemo(
-    () => restartEcho(info?.lastRestart, Date.now()),
+    () => restartEcho(info?.lastRestart),
     // completedAt is the only field that changes per restart event.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [completedAt],
@@ -213,7 +216,7 @@ export function RestartEchoToast() {
     } catch {
       /* sessionStorage unavailable — fall through and show once */
     }
-    setVisible(true);
+    setTimeout(() => setVisible(true), 0);
     const remaining = RESTART_ECHO_FRESH_MS - (Date.now() - Date.parse(completedAt));
     const dwell = Math.max(1_500, Math.min(TOAST_DWELL_MS, remaining));
     const timer = setTimeout(() => {

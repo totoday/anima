@@ -223,13 +223,22 @@ export function SlackConnectStepper({ agentId, onConnect }: Props) {
     [agentId],
   );
 
-  // Once both tokens are individually verified, validate the pair.
-  useEffect(() => {
-    if (appVerified && botVerified && !connecting && !connected) {
-      void checkConnection();
+  async function handleConnect() {
+    if (connecting || connected) return;
+    setConnecting(true);
+    setConnectError(undefined);
+    try {
+      await connectAgentSlack(agentId, { appToken: appToken.trim(), botToken: botToken.trim() });
+      setConnected(true);
+      refreshDashboardData();
+      onConnect?.();
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'Connection failed');
+      setConnectionResult(null);
+    } finally {
+      setConnecting(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appVerified, botVerified]);
+  }
 
   async function checkConnection() {
     try {
@@ -254,6 +263,14 @@ export function SlackConnectStepper({ agentId, onConnect }: Props) {
       setConnectError('Could not reach Slack to validate the token pair.');
     }
   }
+
+  // Once both tokens are individually verified, validate the pair.
+  useEffect(() => {
+    if (appVerified && botVerified && !connecting && !connected) {
+      setTimeout(() => void checkConnection(), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appVerified, botVerified]);
 
   function scheduleValidateApp(token: string) {
     if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
@@ -291,23 +308,6 @@ export function SlackConnectStepper({ agentId, onConnect }: Props) {
   // ---------------------------------------------------------------------------
   // Connect
   // ---------------------------------------------------------------------------
-
-  async function handleConnect() {
-    if (connecting || connected) return;
-    setConnecting(true);
-    setConnectError(undefined);
-    try {
-      await connectAgentSlack(agentId, { appToken: appToken.trim(), botToken: botToken.trim() });
-      setConnected(true);
-      refreshDashboardData();
-      onConnect?.();
-    } catch (err) {
-      setConnectError(err instanceof Error ? err.message : 'Connection failed');
-      setConnectionResult(null);
-    } finally {
-      setConnecting(false);
-    }
-  }
 
   function openInstall() {
     window.open(
