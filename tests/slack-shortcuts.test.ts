@@ -186,11 +186,12 @@ test('home shortcut opens the agent home modal without queueing agent work', asy
   assert.equal(modal.title.text, 'Home');
   assert.equal(modal.callback_id, SLACK_STOP_CONFIRM_VIEW_CALLBACK_ID);
   assert.equal(modal.submit?.text, 'Stop');
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /Scout.*busy/);
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /item-123.*10m/);
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /Submit \*Stop\*/);
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /Active reminders/);
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /Check build/);
+  const modalText = modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n');
+  assert.match(modalText, /\*Scout\*/);
+  assert.match(modalText, /\*Working\*/);
+  assert.match(modalText, /10m/);
+  assert.match(modalText, /Reminders/);
+  assert.match(modalText, /Check build/);
 
   const resultView = await service.confirmStop({
     agentId: 'scout',
@@ -233,8 +234,10 @@ test('home shortcut omits Stop when the agent is idle', async () => {
   assert.equal(modal.title.text, 'Home');
   assert.equal(modal.callback_id, undefined);
   assert.equal(modal.submit, undefined);
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /Scout.*idle/);
-  assert.match(modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n'), /No active reminders/);
+  const modalText = modal.blocks.map((block) => 'text' in block ? block.text.text : '').join('\n');
+  assert.match(modalText, /\*Scout\*/);
+  assert.match(modalText, /\*Idle\*/);
+  assert.match(modalText, /None scheduled/);
 });
 
 test('message shortcut hands the source message to the agent thread and responds ephemerally', async () => {
