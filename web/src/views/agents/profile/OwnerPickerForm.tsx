@@ -108,15 +108,6 @@ export function OwnerPickerForm({
     }
   }, [autoFocus, loading]);
 
-  // Scroll highlighted option into view when keyboard navigating past the
-  // max-h-52 visible window.
-  useEffect(() => {
-    if (!isOpen || highlightIdx < 0) return;
-    document.getElementById(optionId(filtered[highlightIdx]?.slackUserId ?? ''))
-      ?.scrollIntoView({ block: 'nearest' });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightIdx, isOpen]);
-
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
@@ -137,6 +128,15 @@ export function OwnerPickerForm({
     isOpen && highlightIdx >= 0 && filtered[highlightIdx]
       ? optionId(filtered[highlightIdx].slackUserId)
       : undefined;
+
+  // Scroll highlighted option into view when keyboard navigating past the
+  // max-h-52 visible window.
+  useEffect(() => {
+    if (!isOpen || highlightIdx < 0) return;
+    document.getElementById(optionId(filtered[highlightIdx]?.slackUserId ?? ''))
+      ?.scrollIntoView({ block: 'nearest' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightIdx, isOpen]);
 
   // ---------------------------------------------------------------------------
   // Combobox handlers

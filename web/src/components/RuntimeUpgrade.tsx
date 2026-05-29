@@ -126,8 +126,7 @@ export default function RuntimeUpgradeRow() {
   const target = status.operation.targetVersion ?? status.latestOnTrack;
   const inProgress = phase === 'applying' || op === 'scheduled' || op === 'running';
   const completedAt = status.operation.completedAt;
-  const failureFresh =
-    op === 'failed' && (!completedAt || Date.now() - Date.parse(completedAt) < RECENT_FAILURE_MS);
+  const failureFresh = op === 'failed' && isFailureFresh(completedAt);
 
   // Running agents we'd drain — names the upgrade confirm. Queued items are NOT
   // blockers in drain mode (the new worker picks them up), so filter to running.
@@ -136,7 +135,7 @@ export default function RuntimeUpgradeRow() {
   // Honest resume echo for the upgrade path: "N agents resumed" rides the
   // version-flip surface (the "Up to date" row), gated on the same drain-vs-
   // fallback + resumedCount + freshness rule as the restart toast.
-  const upgradeEcho = restartEcho(echoSignal(status.operation), Date.now());
+  const upgradeEcho = restartEcho(echoSignal(status.operation));
   const upgradeResumed = upgradeEcho?.kind === 'resumed' ? upgradeEcho.count : null;
 
   // All idle → execute immediately (no modal). Agents working → confirm with
@@ -425,4 +424,8 @@ function echoSignal(op: RuntimeUpgradeOperation) {
     mode: op.restart?.mode,
     resumedCount: op.restart?.resumedCount,
   };
+}
+
+function isFailureFresh(completedAt: string | undefined): boolean {
+  return !completedAt || Date.now() - Date.parse(completedAt) < RECENT_FAILURE_MS;
 }
