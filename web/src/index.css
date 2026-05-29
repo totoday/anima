@@ -1,0 +1,480 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Editorial type system — three OFL families, self-hosted via @fontsource.
+   Fraunces carries the editorial voice across display AND body via its opsz
+   axis (one typographic identity, not "serif heading + sans body" hedge).
+   Albert Sans handles small UI chrome (tags, buttons, mobile nav) where the
+   serif's stroke contrast would tire the eye. IBM Plex Mono replaces the
+   system-mono stack for IDs, timestamps, transcript envelopes — its slab
+   character pairs with Fraunces' warmth instead of fighting it. */
+@import '@fontsource-variable/fraunces/index.css';
+@import '@fontsource-variable/fraunces/wght-italic.css';
+@import '@fontsource-variable/albert-sans/wght.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+@theme {
+  /* Editorial palette — paper / spine / ink + one deliberate accent.
+
+     Replaces the prior "AI internal-tool" warm-grey + indigo with a committed
+     editorial story: a warm parchment reading surface bound by a dark warm
+     spine (sidebar / outer chrome), ink near-black bodies, and ONE accent
+     (ink red) for selection and outbound voice. Status semantics retuned to
+     sit inside the same palette while staying distinguishable. */
+
+  /* Surfaces. `page` is the dark editorial spine wrapping the bright reading
+     pages; `surface` is the warm paper the activity stream lives on; the two
+     elevated tints sit between paper and spine for hovers/cards. */
+  --color-page: #1f1d1a; /* spine — sidebar / outer chrome */
+  --color-surface: #f6f3ed; /* paper — main reading surface */
+  --color-surface-elevated: #efeae0; /* paper, slightly recessed (hover/select bg) */
+  --color-surface-hover: #ece6d9;
+  --color-surface-raised: #fbf8f1; /* paper, slightly lifted (cards/pills) */
+  --color-border-soft: #d9d2bf; /* hairline rules on paper */
+  --color-border-strong: #b8ad95; /* solid editorial rules */
+  --color-spine-border: #2b2723; /* hairlines on the spine */
+  --color-spine-elevated: #2a2520; /* sidebar hover/selected */
+
+  /* Foregrounds — warm ink on paper, cream on spine. */
+  --color-text: #1c1a17; /* ink, body on paper */
+  --color-text-muted: #5b554a; /* faded ink, secondary body */
+  --color-text-subtle: #8a8273; /* timestamps, captions */
+  --color-text-on-spine: #ede7d8; /* cream, body on dark spine */
+  --color-text-on-spine-muted: #a59c87;
+  --color-text-on-spine-subtle: #7a7164;
+
+  /* Accent — single committed editorial highlight. Used for:
+       • selection chrome (paper lift + left rule)
+       • outbound voice (the dot, the byline, the margin pull-rule)
+     Used sparingly. The body itself never fills with accent. */
+  --color-accent: #b3401f; /* ink red */
+  --color-accent-soft: #f3dccf; /* accent tinted on paper */
+  --color-accent-hover: #8f3217;
+  --color-accent-ink: #5a1c0a; /* accent on dark spine */
+
+  /* Status / activity-dot semantics — retuned to the editorial palette.
+     Failure carries non-color signals too (weight + icon + rule) so red-green
+     accessibility and accent confusion are both covered. */
+  --color-health-ok: #4a6e3a; /* deep moss — idle, succeeded. Bumped
+                                            from #5e7a4a so the IDLE dot reads
+                                            with more confidence in dense status views. */
+  --color-health-ok-soft: #dfe5cf;
+  --color-health-warn: #c08a2b; /* warm gold — working, in progress */
+  --color-health-warn-soft: #f3e6c1;
+  --color-health-error: #9a2a14; /* deep ink red — distinct from accent */
+  --color-health-error-soft: #f1d4ca;
+  --color-health-idle: #8a8273;
+
+  --color-activity-inbound: #2d6b6f; /* muted teal — message received */
+  --color-activity-outbound: var(--color-accent); /* accent — our voice */
+  --color-activity-tool: #6a655c; /* warm grey — tool call */
+  --color-activity-reminder: #6b3a52; /* aubergine — reminder fired */
+  --color-activity-subscription: #3b4d6a; /* slate-indigo — subscription */
+
+  /* Agent identity — warmer + less saturated than before. */
+  --color-agent-1: #2d5b8a; /* deep blue */
+  --color-agent-2: #5e7a4a; /* moss */
+  --color-agent-3: #b3401f; /* ink red */
+  --color-agent-4: #8b3a5c; /* berry */
+  --color-agent-5: #6b3a52; /* aubergine */
+
+  /* Type — Fraunces is the voice; Albert Sans is the chrome; Plex Mono is
+     the audit/transcript register. Use `font-mono` for IDs, timestamps,
+     envelope fields, file paths — anywhere the data is the content. */
+  --font-sans: 'Albert Sans Variable', 'Albert Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Fraunces Variable', 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display: var(--font-serif);
+
+  /* Shadows — warm, not cool grey. Subtle lift, not Material elevation. */
+  --shadow-lift: 0 1px 0 rgba(94, 76, 50, 0.04), 0 2px 8px -2px rgba(94, 76, 50, 0.1);
+  --shadow-deep: 0 1px 0 rgba(94, 76, 50, 0.06), 0 8px 24px -8px rgba(94, 76, 50, 0.18);
+}
+
+/* Base typography — Fraunces body via opsz axis. Body sits at opsz:14 so the
+   strokes are warm but not display-flared. Display sizes use opsz:144 + slight
+   WONK / SOFT for character. Line-height 1.6 for editorial reading rhythm. */
+html,
+body {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.6;
+  font-variation-settings:
+    'opsz' 14,
+    'SOFT' 0,
+    'WONK' 0;
+  font-feature-settings: 'ss01', 'ss02';
+  background: var(--color-page);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Display register — for agent names in chrome, page titles, day dividers.
+   opsz cranked, WONK on for editorial character on the larger sizes. */
+.display,
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 100,
+    'SOFT' 25,
+    'WONK' 1;
+  letter-spacing: -0.01em;
+}
+
+.display-italic {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-variation-settings:
+    'opsz' 80,
+    'SOFT' 50,
+    'WONK' 1;
+}
+
+/* Chrome register — small UI labels (tabs, nav, mobile bottom-nav, buttons).
+   Albert Sans is calmer at 11-12px than Fraunces' contrast. */
+.chrome {
+  font-family: var(--font-sans);
+  font-feature-settings: 'ss01';
+  letter-spacing: 0.01em;
+}
+
+/* Caps register — day dividers, section eyebrows. Fraunces wonk small-caps. */
+.caps {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 14,
+    'SOFT' 0,
+    'WONK' 0;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+/* Atmospheric paper grain — SVG noise overlay, very low opacity. Applied via
+   a fixed pseudo-element so it never interferes with hit-testing or scroll. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.11 0 0 0 0 0.10 0 0 0 0 0.09 0 0 0 0.9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: multiply;
+}
+
+/* Scrollbars — paper-tinted, not generic grey. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+  transition: background 120ms;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: #c9c0a8;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8a8273 !important;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+}
+*:focus {
+  outline: none;
+}
+
+@keyframes anima-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.anima-fade-in {
+  animation: anima-fade-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Day divider — a single hairline + small-caps date, editorial rhythm. */
+.editorial-rule {
+  border: 0;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+/* Selection chrome — paper-lift + 1px accent left rule. Distinct from
+   outbound-voice signal which lives in margin/byline, not row background. */
+.row-selected {
+  position: relative;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-lift);
+}
+.row-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--color-accent);
+}
+
+/* Outbound voice signal — margin pull-rule under the dot, accent-tinted.
+   Body text stays ink; only the chrome carries the accent. */
+.voice-outbound {
+  position: relative;
+}
+.voice-outbound::after {
+  content: '';
+  position: absolute;
+  left: calc(2.5rem + 0.375rem - 0.5px); /* aligned to the dot center */
+  top: 1.5rem;
+  bottom: 0.5rem;
+  width: 1px;
+  background: linear-gradient(to bottom, var(--color-accent) 0%, transparent 90%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  .voice-outbound::after {
+    left: calc(3.5rem + 0.375rem - 0.5px);
+  }
+}
+
+/* Failure stack — three redundant signals so a failed row is structurally
+   heavier than an accented row, not just a hue shift. Color is the weakest
+   of the three (last to read). */
+.row-failed {
+  position: relative;
+}
+.row-failed::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--color-health-error);
+}
+
+/* Knowledge Base markdown — rendered editorial prose (react-markdown output). No
+   @tailwindcss/typography plugin in this project, so the element styling is
+   declared here, scoped under `.md-prose`. Mirrors the paper/ink palette. */
+.md-prose {
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.md-prose > :first-child {
+  margin-top: 0;
+}
+.md-prose h1,
+.md-prose h2,
+.md-prose h3,
+.md-prose h4 {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 60,
+    'SOFT' 25,
+    'WONK' 1;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin: 1.6em 0 0.5em;
+}
+.md-prose h1 {
+  font-size: 1.9em;
+}
+.md-prose h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--color-border-soft);
+  padding-bottom: 0.2em;
+}
+.md-prose h3 {
+  font-size: 1.2em;
+}
+.md-prose h4 {
+  font-size: 1.05em;
+}
+.md-prose p {
+  margin: 0.85em 0;
+}
+.md-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+.md-prose a:hover {
+  text-decoration-color: var(--color-accent);
+}
+.md-prose ul,
+.md-prose ol {
+  margin: 0.85em 0;
+  padding-left: 1.5em;
+}
+.md-prose ul {
+  list-style: disc;
+}
+.md-prose ol {
+  list-style: decimal;
+}
+.md-prose li {
+  margin: 0.3em 0;
+}
+.md-prose li > ul,
+.md-prose li > ol {
+  margin: 0.3em 0;
+}
+.md-prose blockquote {
+  margin: 1em 0;
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.md-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--color-surface-elevated);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.md-prose pre {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.md-prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.82em;
+  line-height: 1.55;
+}
+.md-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-border-soft);
+  margin: 1.6em 0;
+}
+.md-prose img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+.md-prose table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  font-size: 0.92em;
+}
+.md-prose th,
+.md-prose td {
+  border: 1px solid var(--color-border-soft);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.md-prose th {
+  background: var(--color-surface-elevated);
+  font-weight: 600;
+}
+.md-prose tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--color-surface-elevated) 50%, transparent);
+}
+
+/* Knowledge Base file-tree indent — depth controlled by CSS custom property set inline.
+   12px per level on desktop, 8px on mobile to keep names readable at 375px. */
+.tree-row {
+  padding-left: calc(var(--tree-depth, 0) * 12px + 12px);
+}
+@media (max-width: 767px) {
+  .tree-row {
+    padding-left: calc(var(--tree-depth, 0) * 8px + 8px);
+  }
+}
+
+/* shadcn/ui semantic tokens — re-mapped to the editorial palette. */
+:root {
+  --background: #f6f3ed;
+  --foreground: #1c1a17;
+  --muted: #efeae0;
+  --muted-foreground: #8a8273;
+  --popover: #fbf8f1;
+  --popover-foreground: #1c1a17;
+  --card: #fbf8f1;
+  --card-foreground: #1c1a17;
+  --border: #d9d2bf;
+  --input: #d9d2bf;
+  --primary: #1c1a17;
+  --primary-foreground: #f6f3ed;
+  --secondary: #efeae0;
+  --secondary-foreground: #1c1a17;
+  --accent: #b3401f; /* ink red — matches @theme --color-accent; drives text-accent/bg-accent utilities */
+  --accent-foreground: #f3dccf; /* cream — readable text on ink-red accent backgrounds */
+  --destructive: #9a2a14;
+  --destructive-foreground: #f6f3ed;
+  --ring: #b3401f;
+  --radius: 0.25rem; /* tighter editorial corners */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+  --radius-md: var(--radius);
+  --radius-sm: calc(var(--radius) - 1px);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  /* Pointer cursor on all interactive elements — applies globally so individual
+     components don't each need cursor-pointer classes. Disabled state reverts
+     to the default cursor automatically via the :not([disabled]) guard. */
+  button:not([disabled]),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  label[for],
+  select:not([disabled]),
+  input[type="checkbox"]:not([disabled]),
+  input[type="radio"]:not([disabled]) {
+    cursor: pointer;
+  }
+}

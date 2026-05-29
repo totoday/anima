@@ -1,0 +1,183 @@
+import { errorMessage, makeId } from '../ids.js';
+import type { Reminder, ReminderProvenance, ReminderStatus } from '../../shared/reminder.js';
+import { ReminderStore } from '../storage/schema/reminder.store.js';
+import {
+  initialDueAt,
+  nextDueAtForSchedule,
+  parseDurationMs,
+  parseRepeatRule,
+  systemTimezone,
+} from './reminder.helper.js';
+import {
+  defaultReminderActivityRecorder,
+  type ReminderActivityRecorder,
+} from './reminder.activity.js';
+
+const SETTLED_REMINDER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface ScheduleReminderInput {
+  delaySeconds?: number;
+  fireAt?: string;
+  instructions: string;
+  now?: Date;
+  provenance?: ReminderProvenance;
+  repeat?: string;
+  timezone?: string;
+  title: string;
+}
+
+export class ReminderService {
+  constructor(
+    private readonly agentId: string,
+    private readonly store: ReminderStore = new ReminderStore(agentId),
+    private readonly activity: ReminderActivityRecorder = defaultReminderActivityRecorder,
+  ) {}
+
+  async scheduleReminder(input: ScheduleReminderInput): Promise<Reminder> {
+    const now = input.now ?? new Date();
+    return this.activity.schedule({ agentId: this.agentId, ...input }, async () => {
+      const title = input.title.trim();
+      const instructions = input.instructions.trim();
+      if (!title) throw new Error('reminder schedule requires title');
+      if (!instructions) throw new Error('reminder schedule requires instructions');
+
+      const hasFireAt = Boolean(input.fireAt);
+      const hasDelay = input.delaySeconds !== undefined;
+      const hasRepeat = Boolean(input.repeat);
+      if ([hasFireAt, hasDelay, hasRepeat].filter(Boolean).length !== 1) {
+        throw new Error('Pass exactly one of fireAt, delaySeconds, or repeat');
+      }
+
+      const timezone = input.timezone?.trim() || systemTimezone();
+      const schedule = hasRepeat
+        ? parseRepeatRule(input.repeat as string, timezone)
+        : { kind: 'once' as const };
+      const createdAt = now.toISOString();
+      const reminder: Reminder = {
+        createdAt,
+        firedCount: 0,
+        instructions,
+        nextDueAt: initialDueAt({
+          delaySeconds: input.delaySeconds,
+          fireAt: input.fireAt,
+          now,
+          schedule,
+        }),
+        ...(input.provenance ? { provenance: input.provenance } : {}),
+        reminderId: makeId('rem'),
+        schedule,
+        status: 'scheduled',
+        title,
+        updatedAt: createdAt,
+      };
+      await this.store.create(reminder);
+      await this.pruneOldSettled(now);
+      return reminder;
+    });
+  }
+
+  async cancelReminder(input: { id: string; now?: Date }): Promise<Reminder> {
+    const now = input.now ?? new Date();
+    return this.activity.cancel({ agentId: this.agentId, id: input.id }, async () => {
+      const reminder = await this.store.find(input.id);
+      if (!reminder) throw new Error(`Reminder not found: ${input.id}`);
+      if (reminder.status === 'cancelled') return reminder;
+      const cancelledAt = now.toISOString();
+      reminder.status = 'cancelled';
+      reminder.cancelledAt = cancelledAt;
+      reminder.updatedAt = cancelledAt;
+      delete reminder.nextDueAt;
+      const updated = await this.store.update(reminder);
+      await this.pruneOldSettled(now);
+      return updated;
+    });
+  }
+
+  async snoozeReminder(input: { by: string; id: string; now?: Date }): Promise<Reminder> {
+    const durationMs = parseDurationMs(input.by);
+    const now = input.now ?? new Date();
+    return this.activity.snooze({ agentId: this.agentId, id: input.id }, async () => {
+      const reminder = await this.store.find(input.id);
+      if (!reminder) throw new Error(`Reminder not found: ${input.id}`);
+      if (reminder.status === 'cancelled') {
+        throw new Error(`Cannot snooze cancelled reminder: ${reminder.reminderId}`);
+      }
+      reminder.status = 'scheduled';
+      reminder.nextDueAt = new Date(now.getTime() + durationMs).toISOString();
+      reminder.updatedAt = now.toISOString();
+      const updated = await this.store.update(reminder);
+      await this.pruneOldSettled(now);
+      return updated;
+    });
+  }
+
+  async completeReminderFire(input: { id: string; now?: Date }): Promise<Reminder> {
+    const now = input.now ?? new Date();
+    const reminder = await this.store.find(input.id);
+    if (!reminder) throw new Error(`Reminder not found: ${input.id}`);
+    const firedAt = now.toISOString();
+    reminder.firedCount += 1;
+    reminder.lastFiredAt = firedAt;
+    if (reminder.schedule.kind === 'once') {
+      reminder.status = 'fired';
+      delete reminder.nextDueAt;
+    } else {
+      reminder.status = 'scheduled';
+      reminder.nextDueAt = nextDueAtForSchedule(reminder.schedule, now);
+    }
+    reminder.updatedAt = firedAt;
+    const updated = await this.store.update(reminder);
+    await this.pruneOldSettled(now);
+    return updated;
+  }
+
+  async recordReminderFire(input: {
+    firedAt?: Date;
+    reminder: Reminder;
+  }): Promise<void> {
+    await this.activity.fire({ agentId: this.agentId, ...input });
+  }
+
+  async listReminders(input: { statuses?: ReminderStatus[] } = {}): Promise<Reminder[]> {
+    const statuses = new Set(input.statuses ?? ['scheduled', 'fired']);
+    const reminders = await this.listAllReminders();
+    return reminders
+      .filter((reminder) => statuses.has(reminder.status))
+      .sort((a, b) => (a.nextDueAt ?? a.updatedAt).localeCompare(b.nextDueAt ?? b.updatedAt));
+  }
+
+  async listAllReminders(): Promise<Reminder[]> {
+    return this.store.list();
+  }
+
+  async findReminder(reminderId: string): Promise<Reminder | undefined> {
+    return this.store.find(reminderId);
+  }
+
+  async dueReminders(input: { now?: Date } = {}): Promise<Reminder[]> {
+    const now = input.now ?? new Date();
+    const nowMs = now.getTime();
+    const reminders = await this.listAllReminders();
+    return reminders
+      .filter(
+        (reminder) =>
+          reminder.status === 'scheduled' &&
+          reminder.nextDueAt !== undefined &&
+          Date.parse(reminder.nextDueAt) <= nowMs,
+      )
+      .sort((a, b) => (a.nextDueAt ?? '').localeCompare(b.nextDueAt ?? ''));
+  }
+
+  private async pruneOldSettled(now: Date): Promise<void> {
+    const cutoffIso = new Date(now.getTime() - SETTLED_REMINDER_RETENTION_MS).toISOString();
+    try {
+      await this.store.pruneSettledBefore(cutoffIso);
+    } catch (error) {
+      console.warn(`Reminder retention failed for ${this.agentId}: ${errorMessage(error)}`);
+    }
+  }
+}
+
+export function reminderServiceForAgent(agentId: string): ReminderService {
+  return new ReminderService(agentId);
+}

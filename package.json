@@ -1,0 +1,69 @@
+{
+  "name": "anima",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "packageManager": "pnpm@11.0.0",
+  "type": "module",
+  "bin": {
+    "anima": "./bin/anima",
+    "animactl": "./bin/animactl"
+  },
+  "files": [
+    "CLAUDE.md",
+    ".env.example",
+    "README.md",
+    "agent.config.example.json",
+    "bin/",
+    "config.example.json",
+    "dist/server/",
+    "dist/shared/",
+    "dist/web/",
+    "docs/design.md",
+    "docs/deployment.md",
+    "docs/quickstart.md",
+    "docs/release.md",
+    "docs/runtime-providers.md",
+    "docs/service-runbook.md",
+    "templates/",
+    "examples/"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json && pnpm build:ui",
+    "build:server": "rm -rf dist/server dist/shared dist/tests && tsc -p tsconfig.json",
+    "build:ui": "cd web && pnpm build",
+    "pack:check": "pnpm build && npm pack --dry-run --ignore-scripts",
+    "pack:tarball": "rm -f anima-*.tgz && npm pack",
+    "prepack": "pnpm build",
+    "services:restart": "pnpm build && node dist/server/cli/animactl.js services restart",
+    "services:start": "node dist/server/cli/animactl.js services start",
+    "services:status": "node dist/server/cli/animactl.js services status",
+    "services:stop": "node dist/server/cli/animactl.js services stop",
+    "dev:services:restart": "pnpm build && ANIMA_HOME=./.anima node dist/server/cli/animactl.js services restart",
+    "dev:services:start": "ANIMA_HOME=./.anima node dist/server/cli/animactl.js services start",
+    "dev:services:status": "ANIMA_HOME=./.anima node dist/server/cli/animactl.js services status",
+    "dev:services:stop": "ANIMA_HOME=./.anima node dist/server/cli/animactl.js services stop",
+    "test": "pnpm test:fast",
+    "test:fast": "pnpm build:server && node scripts/run-tests.mjs fast",
+    "test:fast:dist": "node scripts/run-tests.mjs fast",
+    "test:unit": "pnpm build:server && node scripts/run-tests.mjs unit",
+    "test:api": "pnpm build:server && node scripts/run-tests.mjs api",
+    "test:runtime": "pnpm build:server && node scripts/run-tests.mjs runtime",
+    "test:all": "pnpm build && node scripts/run-tests.mjs all",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.7.2",
+    "@slack/web-api": "^7.15.2",
+    "commander": "^14.0.3",
+    "fastify": "^5.8.5",
+    "ignore": "^7.0.5",
+    "luxon": "^3.7.2",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.anima/
+.anima-demo/
+.env
+*.tgz
+.DS_Store
+web/.env.local

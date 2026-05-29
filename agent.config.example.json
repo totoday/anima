@@ -1,0 +1,17 @@
+{
+  "id": "scout",
+  "profile": {
+    "displayName": "Scout",
+    "role": "Example Slack teammate bot with one continuous primary session."
+  },
+  "homePath": "agents/scout",
+  "provider": {
+    "kind": "claude-code",
+    "model": "sonnet",
+    "reasoningEffort": "medium"
+  },
+  "slack": {
+    "botToken": "",
+    "appToken": ""
+  }
+}

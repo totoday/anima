@@ -1,0 +1,225 @@
+import type {
+  ChoiceResponseInboxItem,
+  InboxItem,
+  OnboardingInboxItem,
+  ReminderInboxItem,
+} from '../../shared/inbox.js';
+import {
+  slackSurfaceDisplayRef,
+  slackSurfaceForEvent,
+  type SlackEvent,
+  type SlackFile,
+} from '../inbox/slack-events.js';
+import type { Reminder } from '../../shared/reminder.js';
+
+export interface CodeAgentPromptContext {
+  reminder?: Reminder;
+}
+
+/**
+ * Builds the user-facing delivery prompt that is sent to the code agent.
+ *
+ * Slack message (channel thread, with files):
+ *   New Slack message:
+ *
+ *   [channel=#team channel_id=C-team thread_ts=1770000020.000001 message_ts=1770000010.000001 time=... user_id=U1 user_local_time=... user_tz=America/Los_Angeles] Alice (@alice): check this out
+ *   <attached_files>
+ *   <file id="F-img" name="screenshot.png" mimetype="image/png" size_bytes="4096" path="/tmp/anima/F-img/screenshot.png" />
+ *   </attached_files>
+ *
+ * Scheduled reminder (with provenance):
+ *   Scheduled reminder:
+ *
+ *   [reminder_id=reminder-test time=2026-05-18T17:00:00.000Z] Scheduled wake: Follow up on deploy
+ *
+ *   Instructions:
+ *   Check whether the deploy finished.
+ *
+ *   Provenance:
+ *   {
+ *     "threadTs": "1770000020.000001",
+ *     "channelId": "C-team"
+ *   }
+ */
+export function buildCodeAgentDeliveryPrompt(event: InboxItem, context: CodeAgentPromptContext = {}): string {
+  if (event.kind === 'reminder') {
+    return formatReminderForPrompt(event, context);
+  }
+  if (event.kind === 'onboarding') {
+    return formatOnboardingForPrompt(event);
+  }
+  if (event.kind === 'choice_response') {
+    return formatChoiceResponseForPrompt(event);
+  }
+  if (event.id.startsWith('agent-onboarding:')) {
+    return formatLegacyOnboardingSlackForPrompt(event);
+  }
+
+  const envelope = `${messageEnvelope(event)} ${actorLabel(event)}: ${event.text}`;
+  const attachments = formatAttachedFiles(event.files);
+  const attentionSuggestion = formatAttentionSuggestion(event.attentionSuggestion);
+  return [
+    `New Slack message:\n\n${envelope}`,
+    attachments,
+    attentionSuggestion,
+  ].filter(Boolean).join('\n');
+}
+
+function formatChoiceResponseForPrompt(event: ChoiceResponseInboxItem): string {
+  const actor = readableChoiceActor(event.answeredBy);
+  return `Choice response:
+
+[ask_id=${event.askId} channel=${event.channelId} thread_ts=${event.threadTs} message_ts=${event.messageTs} time=${event.receivedAt} user_id=${event.answeredBy.slackUserId}]
+${actor} selected: ${event.optionLabel}
+
+Question:
+${event.question}
+
+Reply target:
+Use \`anima message send --channel ${event.channelId} --thread-ts ${event.threadTs}\` to reply under the question.`;
+}
+
+function formatLegacyOnboardingSlackForPrompt(event: SlackEvent): string {
+  const ownerLabel = event.actor?.userId ? `<@${event.actor.userId}>` : 'the operator';
+  return `Agent onboarding:
+
+[operator=${ownerLabel} channel=${event.channelId} time=${event.receivedAt}]
+${event.text}
+
+Reply target:
+Use \`anima message send --channel ${event.channelId}\` to reply to ${ownerLabel}.`;
+}
+
+function formatOnboardingForPrompt(event: OnboardingInboxItem): string {
+  const ownerLabel = readableOperatorLabel(event.operator);
+  return `Agent onboarding:
+
+[operator=${ownerLabel} channel=${event.channelId} time=${event.receivedAt}]
+${event.text}
+
+Reply target:
+Use \`anima message send --channel ${event.channelId}\` to reply to ${ownerLabel}.`;
+}
+
+function formatReminderForPrompt(
+  event: ReminderInboxItem,
+  context: CodeAgentPromptContext,
+): string {
+  const reminder = context.reminder?.reminderId === event.reminderId ? context.reminder : undefined;
+  if (!reminder) {
+    return `Scheduled reminder:\n\n[reminder_id=${event.reminderId} time=${event.receivedAt}] Reminder fired.`;
+  }
+  const provenance = reminder.provenance
+    ? `\n\nProvenance:\n${JSON.stringify(reminder.provenance, null, 2)}`
+    : '';
+
+  return `Scheduled reminder:
+
+[reminder_id=${reminder.reminderId} time=${event.receivedAt}] Scheduled wake: ${reminder.title}
+
+Instructions:
+${reminder.instructions}${provenance}`;
+}
+
+function messageEnvelope(event: SlackEvent): string {
+  const surface = slackSurfaceForEvent(event);
+  const { actor } = event;
+  const displayRef = slackSurfaceDisplayRef(surface);
+  const channelIdPart = displayRef === surface.channelId ? '' : ` channel_id=${surface.channelId}`;
+  const threadPart = surface.threadTs ? ` thread_ts=${surface.threadTs}` : '';
+  const userPart = actor?.userId ? ` user_id=${actor.userId}` : '';
+  const userTimePart = actor?.timezone ? ` user_local_time=${formatUserLocalTime(event.receivedAt, actor.timezone)} user_tz=${actor.timezone.name}` : '';
+
+  return `[channel=${displayRef}${channelIdPart}${threadPart} message_ts=${event.messageTs} time=${event.receivedAt}${userPart}${userTimePart}]`;
+}
+
+function actorLabel(event: SlackEvent): string {
+  const { actor } = event;
+  const displayName = actor?.displayName ?? actor?.realName;
+  const handle = normalizeHandle(actor?.handle);
+
+  if (displayName && handle) {
+    if (sameName(displayName, handle)) return handle;
+    return `${displayName} (${handle})`;
+  }
+  return displayName ?? handle ?? (actor?.userId ? `@${actor.userId}` : '@unknown');
+}
+
+function readableOperatorLabel(operator: OnboardingInboxItem['operator']): string {
+  const handle = normalizeHandle(operator.handle);
+  const mention = `<@${operator.slackUserId}>`;
+  if (operator.displayName && handle) return `${operator.displayName} (${handle}, ${mention})`;
+  if (operator.displayName) return `${operator.displayName} (${mention})`;
+  return handle ? `${handle} (${mention})` : mention;
+}
+
+function readableChoiceActor(actor: ChoiceResponseInboxItem['answeredBy']): string {
+  const handle = normalizeHandle(actor.handle);
+  const mention = `<@${actor.slackUserId}>`;
+  if (actor.displayName && handle) return `${actor.displayName} (${handle}, ${mention})`;
+  if (actor.displayName) return `${actor.displayName} (${mention})`;
+  return handle ? `${handle} (${mention})` : mention;
+}
+
+function formatAttachedFiles(files: SlackFile[] | undefined): string {
+  if (!files?.length) return '';
+  const rendered = files.map(formatAttachedFile);
+  return '<attached_files>\n' + rendered.join('\n') + '\n</attached_files>';
+}
+
+function formatAttachedFile(file: SlackFile): string {
+  const errorAttr = file.downloadError ? ` error=${escapeAttr(file.downloadError)}` : '';
+
+  return `<file id=${escapeAttr(file.id)} name=${escapeAttr(file.name)} mimetype=${escapeAttr(file.mimetype)} size_bytes=${escapeAttr(String(file.sizeBytes))}${errorAttr} />`;
+}
+
+function formatAttentionSuggestion(suggestion: string | undefined): string {
+  return suggestion ? `Attention suggestion:\n${suggestion}` : '';
+}
+
+function normalizeHandle(handle: string | undefined): string | undefined {
+  if (!handle) return undefined;
+  return handle.startsWith('@') ? handle : `@${handle}`;
+}
+
+function sameName(a: string, b: string): boolean {
+  return a.trim().replace(/^@/, '').toLowerCase() === b.trim().replace(/^@/, '').toLowerCase();
+}
+
+function escapeAttr(value: string): string {
+  const escaped = value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `"${escaped}"`;
+}
+
+function formatUserLocalTime(
+  timestamp: string,
+  timezone: NonNullable<NonNullable<SlackEvent['actor']>['timezone']>,
+): string {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return timestamp;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    month: '2-digit',
+    second: '2-digit',
+    timeZone: timezone.name,
+    year: 'numeric',
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value;
+  const offset = typeof timezone.offsetSeconds === 'number' ? timezoneOffsetSuffix(timezone.offsetSeconds) : '';
+  return `${value('year')}-${value('month')}-${value('day')}T${value('hour')}:${value('minute')}:${value('second')}${offset}`;
+}
+
+function timezoneOffsetSuffix(offsetSeconds: number): string {
+  const sign = offsetSeconds < 0 ? '-' : '+';
+  const absolute = Math.abs(offsetSeconds);
+  const hours = Math.floor(absolute / 3600);
+  const minutes = Math.floor((absolute % 3600) / 60);
+  return `${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+set -eu
+
+SOURCE="$0"
+while [ -h "$SOURCE" ]; do
+  DIR="$(CDPATH= cd -P -- "$(dirname -- "$SOURCE")" && pwd)"
+  TARGET="$(readlink "$SOURCE")"
+  case "$TARGET" in
+    /*) SOURCE="$TARGET" ;;
+    *) SOURCE="$DIR/$TARGET" ;;
+  esac
+done
+
+ROOT_DIR="$(CDPATH= cd -P -- "$(dirname -- "$SOURCE")/.." && pwd)"
+exec node "$ROOT_DIR/dist/server/cli/animactl.js" "$@"

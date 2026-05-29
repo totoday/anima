@@ -1,0 +1,239 @@
+import type { WebClient } from '@slack/web-api';
+
+import {
+  ensureThreadSubscriptionForSentMessage,
+  recordChannelPost,
+} from '../inbox/slack-subscription.service.js';
+import { resolveSlackChannelArgument } from './slack-channel-resolver.js';
+import { slackMessageContentForText } from './slack-message-format.js';
+import {
+  mentionWarningsForTarget,
+  slackTextForPostMessage,
+  type SlackTextForPostMessage,
+} from './slack-message-mentions.js';
+import {
+  slackOutputTarget,
+  slackTargetPayload,
+  slackTargetSummary,
+  slackThreadSummary,
+  type SlackTargetSummary,
+  type SlackThreadSummary,
+} from './slack-target.js';
+import {
+  resolveToolAgentId,
+  slackWebClientForOpts,
+  withToolActivity,
+  readStdin,
+} from './tool-context.js';
+
+interface MessageGlobalInput {
+  agent?: string;
+  item?: string;
+}
+
+interface MessageSendInput extends MessageGlobalInput {
+  channel?: string;
+  text?: string;
+  threadTs?: string;
+}
+
+interface MessageUpdateInput extends MessageGlobalInput {
+  channel?: string;
+  messageTs?: string;
+  text?: string;
+}
+
+type SlackPostMessagePayload = Parameters<WebClient['chat']['postMessage']>[0];
+type SlackUpdateMessagePayload = Parameters<WebClient['chat']['update']>[0];
+
+export async function runMessageSend(opts: MessageSendInput): Promise<void> {
+  const text = await readStdin();
+  const agentId = resolveToolAgentId(opts);
+  if (!agentId) throw new Error('message send requires current agent context for audit');
+  if (!opts.channel) throw new Error('message send requires --channel');
+  const { agent, client } = await slackWebClientForOpts(opts);
+  const teamId = agent.slack.teamId || undefined;
+  const channel = await resolveSlackChannelArgument({
+    channel: opts.channel,
+    client,
+    teamId,
+  });
+  const threadTs = opts.threadTs;
+  const target = await slackTargetSummary({ channel, client, teamId });
+  const thread = threadTs ? slackThreadSummary(target, threadTs) : undefined;
+  const basePayload = {
+    ...slackTargetPayload(channel),
+    ...target,
+    ...(thread ? thread : {}),
+    ...(threadTs ? { threadTs } : {}),
+    tool: 'anima.message.send',
+  };
+
+  await withToolActivity({
+    audit: { agentId },
+    basePayload,
+    effectType: 'slack.message.send',
+    op: async () => {
+      const slackText = await slackTextForPostMessage({ client, teamId, text });
+      const content = slackMessageContentForText(slackText.text);
+      const warnings = await mentionWarningsForTarget({
+        channelId: channel.id,
+        client,
+        slackText,
+        target,
+        teamId,
+      });
+      const payload = {
+        ...(content.blocks ? { blocks: content.blocks } : {}),
+        channel: channel.id,
+        text: content.text,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      } as SlackPostMessagePayload;
+      const response = await client.chat.postMessage(payload);
+      const channelId = response.channel ?? channel.id;
+      const permalink = slackMessageRedirectLink({ channelId, messageTs: response.ts });
+      if (!channel.dmUserId && !threadTs) {
+        await recordChannelPost({ agentId, channelId });
+      }
+      const threadSubscription = channel.dmUserId || !response.ts
+        ? undefined
+        : await ensureThreadSubscriptionForSentMessage({
+            agentId,
+            channelId,
+            messageTs: response.ts,
+            ...(threadTs ? { threadTs } : {}),
+          });
+      console.log(slackOutputLine({
+        messageTs: response.ts,
+        status: 'sent',
+        target,
+        ...(thread ? { thread } : {}),
+        warnings,
+      }));
+      return {
+        result: undefined,
+        completedPayload: {
+          payload,
+          ...slackTextPayload(slackText, text),
+          messageFormat: content.format,
+          ...(content.blockCount ? { blockCount: content.blockCount } : {}),
+          ...(permalink ? { permalink } : {}),
+          ...(warnings.length ? { warnings } : {}),
+          ...(threadSubscription ? { threadSubscription: subscriptionPayload(threadSubscription) } : {}),
+          status: 'sent',
+          text,
+          ...(response.ts ? { ts: response.ts } : {}),
+        },
+      };
+    },
+  });
+}
+
+export async function runMessageUpdate(opts: MessageUpdateInput): Promise<void> {
+  const text = await readStdin();
+  const agentId = resolveToolAgentId(opts);
+  if (!agentId) throw new Error('message update requires current agent context for audit');
+  if (!opts.channel) throw new Error('message update requires --channel');
+  const targetTs = opts.messageTs;
+  if (!targetTs) throw new Error('message update requires --message-ts');
+  const { agent, client } = await slackWebClientForOpts(opts);
+  const teamId = agent.slack.teamId || undefined;
+  const channel = await resolveSlackChannelArgument({
+    channel: opts.channel,
+    client,
+    teamId,
+  });
+
+  const target = await slackTargetSummary({ channel, client, teamId });
+  const basePayload = {
+    ...slackTargetPayload(channel),
+    ...target,
+    targetTs,
+    tool: 'anima.message.update',
+  };
+
+  await withToolActivity({
+    audit: { agentId },
+    basePayload,
+    effectType: 'slack.message.update',
+    op: async () => {
+      const slackText = await slackTextForPostMessage({ client, teamId, text });
+      const content = slackMessageContentForText(slackText.text);
+      const warnings = await mentionWarningsForTarget({
+        channelId: channel.id,
+        client,
+        slackText,
+        target,
+        teamId,
+      });
+      const payload = {
+        ...(content.blocks ? { blocks: content.blocks } : {}),
+        channel: channel.id,
+        text: content.text,
+        ts: targetTs,
+      } as SlackUpdateMessagePayload;
+      const response = await client.chat.update(payload);
+      const responseTs = response.ts ?? targetTs;
+      const permalink = slackMessageRedirectLink({ channelId: channel.id, messageTs: responseTs });
+      console.log(slackOutputLine({
+        messageTs: responseTs,
+        status: 'updated',
+        target,
+        warnings,
+      }));
+      return {
+        result: undefined,
+        completedPayload: {
+          payload,
+          ...slackTextPayload(slackText, text),
+          messageFormat: content.format,
+          ...(content.blockCount ? { blockCount: content.blockCount } : {}),
+          ...(permalink ? { permalink } : {}),
+          ...(warnings.length ? { warnings } : {}),
+          status: 'updated',
+          text,
+          ts: responseTs,
+        },
+      };
+    },
+  });
+}
+
+function subscriptionPayload(subscription: { kind: string; mutedAt?: string; subscriptionId: string; threadTs?: string }): Record<string, unknown> {
+  return {
+    subscriptionId: subscription.subscriptionId,
+    kind: subscription.kind,
+    ...(subscription.mutedAt ? { mutedAt: subscription.mutedAt } : {}),
+    ...(subscription.threadTs ? { threadTs: subscription.threadTs } : {}),
+  };
+}
+
+function slackTextPayload(slackText: SlackTextForPostMessage, originalText: string): Record<string, unknown> {
+  return {
+    ...(slackText.resolved.length > 0 ? { resolvedMentions: slackText.resolved } : {}),
+    ...(slackText.text !== originalText ? { slackText: slackText.text } : {}),
+    ...(slackText.unresolved.length > 0 ? { unresolvedMentions: slackText.unresolved } : {}),
+  };
+}
+
+function slackMessageRedirectLink(input: {
+  channelId: string;
+  messageTs?: string;
+}): string | undefined {
+  if (!input.messageTs) return undefined;
+  return `https://slack.com/app_redirect?channel=${encodeURIComponent(input.channelId)}&message_ts=${encodeURIComponent(input.messageTs)}`;
+}
+
+function slackOutputLine(input: {
+  messageTs?: string;
+  status: 'sent' | 'updated';
+  target: SlackTargetSummary;
+  thread?: SlackThreadSummary;
+  warnings?: string[];
+}): string {
+  const parts = [slackOutputTarget(input.target)];
+  if (input.thread) parts.push(`thread_ts=${input.thread.threadTs}`);
+  if (input.messageTs) parts.push(`message_ts=${input.messageTs}`);
+  const warning = input.warnings?.length ? ` Warning: ${input.warnings.join(' ')}` : '';
+  return `${input.status} successfully. ${parts.join(', ')}.${warning}`;
+}

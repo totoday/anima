@@ -1,0 +1,22 @@
+// Re-exports from the shared url-routes module.
+//
+// Navigation is now handled by react-router (useNavigate / useLocation).
+// This barrel keeps the re-exported type + utility aliases working so
+// import sites don't need to know the backend path.
+
+export {
+  AGENT_TABS,
+  DEFAULT_TAB,
+  buildPath,
+  buildKbPath,
+  buildKbRawPath,
+  parseLocation,
+  parseKbPath,
+  reconcileLocation,
+} from '@shared/url-routes';
+export type {
+  AgentTab,
+  ReconcileSnapshot,
+  UrlLocation,
+  KbLocation,
+} from '@shared/url-routes';
