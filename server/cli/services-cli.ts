@@ -3,10 +3,14 @@ import { resolve as resolvePath } from 'node:path';
 
 import type { Command } from 'commander';
 
-import { defaultAgentRegistryService } from '../agents/agent.service.js';
-import { WakeQueueService, type InboxItem } from '../inbox/wake-queue.service.js';
 import { defaultServerSettingsService } from '../settings/settings.service.js';
 import { resolveAnimaHome } from '../anima-home.js';
+import {
+  DEFAULT_RESTART_IDLE_TIMEOUT_MS,
+  listRestartBlockers,
+  restartBlockedError,
+  waitForRestartIdle,
+} from '../services/restart-gate.js';
 import {
   isServiceRunning,
   printStatus,
@@ -18,19 +22,12 @@ import {
 import type { GlobalCliOptions } from './shared.js';
 
 const DEFAULT_DASHBOARD_PORT = 4174;
-const DEFAULT_RESTART_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-const RESTART_IDLE_POLL_MS = 1000;
 type ServiceId = 'agent' | 'web';
 type ServicesCliOptions = GlobalCliOptions & {
   force?: boolean;
   idleTimeoutMs?: number;
   only?: ServiceId;
 };
-
-interface RestartBlocker {
-  agentId: string;
-  item: InboxItem;
-}
 
 export function registerServicesCommand(program: Command): void {
   const services = program
@@ -169,97 +166,10 @@ async function assertRestartGate(specs: ServiceSpec[], opts: ServicesCliOptions)
   if (finalBlockers.length > 0) throw restartBlockedError(finalBlockers, 'Agents became busy before restart.');
 }
 
-async function waitForRestartIdle(timeoutMs: number): Promise<void> {
-  const startedAt = Date.now();
-  let loggedWait = false;
-  while (true) {
-    const blockers = await listRestartBlockers();
-    if (blockers.length === 0) return;
-
-    const elapsedMs = Date.now() - startedAt;
-    if (elapsedMs >= timeoutMs) throw restartBlockedError(blockers, 'Timed out waiting for agents to become idle.');
-
-    if (!loggedWait) {
-      console.error(`Waiting for agents to become idle before restart (timeout ${formatDurationMs(timeoutMs)}).`);
-      loggedWait = true;
-    }
-    await sleep(Math.min(RESTART_IDLE_POLL_MS, timeoutMs - elapsedMs));
-  }
-}
-
-async function listRestartBlockers(): Promise<RestartBlocker[]> {
-  const blockers: RestartBlocker[] = [];
-  for (const agentId of await defaultAgentRegistryService.listAgentIds()) {
-    for (const item of await new WakeQueueService(agentId).list()) {
-      if (item.handling.status !== 'queued' && item.handling.status !== 'running') continue;
-      blockers.push({ agentId, item });
-    }
-  }
-  return blockers.sort((a, b) =>
-    blockerSortKey(a).localeCompare(blockerSortKey(b)),
-  );
-}
-
-function blockerSortKey(blocker: RestartBlocker): string {
-  return `${blocker.agentId}:${itemStatusAt(blocker.item)}:${blocker.item.id}`;
-}
-
-function restartBlockedError(blockers: RestartBlocker[], prefix: string): Error {
-  return new Error([
-    `${prefix} Restart blocked because agent inboxes are not idle:`,
-    ...blockers.map(formatBlocker),
-    'Use --force to restart anyway.',
-  ].join('\n'));
-}
-
-function formatBlocker({ agentId, item }: RestartBlocker): string {
-  const handling = item.handling;
-  const parts = [
-    `agent=${agentId}`,
-    `status=${handling.status}`,
-    `item=${item.id}`,
-    `since=${itemStatusAt(item)}`,
-    handling.workerId ? `worker=${handling.workerId}` : undefined,
-    itemSummary(item) ? `text=${JSON.stringify(itemSummary(item))}` : undefined,
-  ].filter(Boolean);
-  return `- ${parts.join(' ')}`;
-}
-
-function itemStatusAt(item: InboxItem): string {
-  return item.handling.startedAt ?? item.handling.queuedAt ?? item.handling.updatedAt;
-}
-
-function itemSummary(item: InboxItem): string {
-  if (item.kind === 'slack' || item.kind === 'onboarding') return truncate(item.text);
-  if (item.kind === 'choice_response') {
-    const actor = item.answeredBy.handle ?? item.answeredBy.displayName ?? item.answeredBy.slackUserId;
-    return truncate(`${actor}: ${item.optionLabel}`);
-  }
-  return item.kind;
-}
-
-function truncate(value: string): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized;
-}
-
-function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
-}
-
 function parseNonNegativeInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error('--idle-timeout-ms must be a non-negative integer');
   }
   return parsed;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }

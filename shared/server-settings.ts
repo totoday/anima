@@ -5,3 +5,6 @@ export const SidebarOrder = z.object({
   kbs: z.array(z.string()).optional(),
 });
 export type SidebarOrder = z.infer<typeof SidebarOrder>;
+
+export const ReleaseTrack = z.enum(['stable', 'canary']);
+export type ReleaseTrack = z.infer<typeof ReleaseTrack>;
