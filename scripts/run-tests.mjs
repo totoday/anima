@@ -16,6 +16,7 @@ const groups = {
     'prompt-attachments.test.js',
     'reminders.test.js',
     'runtime.test.js',
+    'runtime-upgrade.test.js',
     'slack-adapter.test.js',
     'slack-files.test.js',
     'slack-shortcuts.test.js',

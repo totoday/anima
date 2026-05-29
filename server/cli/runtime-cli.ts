@@ -1,6 +1,8 @@
 import type { Command } from 'commander';
 import { spawn } from 'node:child_process';
 
+import { withAnimaHome } from '../anima-home.js';
+import { defaultServerSettingsService } from '../settings/settings.service.js';
 import {
   DEFAULT_RUNTIME_PACKAGE,
   currentRuntimePackageInfo,
@@ -11,17 +13,31 @@ import {
   type RuntimeInstallOptions,
   type RuntimeStatus,
 } from '../runtime/managed-runtime.js';
+import {
+  RuntimeUpgradeService,
+  runRuntimeUpgradeWorker,
+  type RuntimeUpgradeWorkerOptions,
+} from '../runtime/runtime-upgrade.js';
+import { RuntimeReleaseTrack, type RuntimeUpgradeStatusResponse } from '../../shared/runtime-upgrade.js';
 
 interface RuntimeCliOptions {
   channel?: string;
+  dashboardHost?: string;
+  dashboardPort?: number;
   force?: boolean;
   idleTimeoutMs?: number;
+  logPath?: string;
   npm?: string;
   only?: 'agent' | 'web';
   packageName?: string;
+  previousStartedAt?: string;
+  previousVersion?: string;
+  releaseTrack?: string;
   runtimeDir?: string;
   skipInstall?: boolean;
+  targetVersion?: string;
   version?: string;
+  verifyTimeoutMs?: number;
 }
 
 type ServiceCommand = 'restart' | 'start' | 'status' | 'stop';
@@ -89,6 +105,51 @@ function registerRuntimeCommands(program: Command, options: { topLevel: boolean 
       });
   }
 
+  program
+    .command('upgrade-status')
+    .description('Check whether the managed runtime has an available update')
+    .action(async () => {
+      await withRuntimeHome(options.topLevel, async () => {
+        printUpgradeStatus(await new RuntimeUpgradeService().status());
+      });
+    });
+
+  program
+    .command('release-track')
+    .description('Show or set the hidden operator release track: stable or canary')
+    .argument('[track]', 'stable or canary')
+    .action(async (track: string | undefined) => {
+      await withRuntimeHome(options.topLevel, async () => {
+        if (track === undefined) {
+          console.log(`releaseTrack: ${await defaultServerSettingsService.getReleaseTrack()}`);
+          return;
+        }
+        const parsed = RuntimeReleaseTrack.safeParse(track);
+        if (!parsed.success) throw new Error('release track must be "stable" or "canary"');
+        console.log(`releaseTrack: ${await defaultServerSettingsService.setReleaseTrack(parsed.data)}`);
+      });
+    });
+
+  program
+    .command('upgrade-worker')
+    .description('Internal detached runtime upgrade worker')
+    .requiredOption('--target-version <version>', 'exact runtime version to install')
+    .requiredOption('--release-track <track>', 'stable or canary')
+    .option('--dashboard-host <host>', 'dashboard host for post-upgrade verification')
+    .option('--dashboard-port <port>', 'dashboard port for post-upgrade verification', parsePositiveInteger)
+    .option('--idle-timeout-ms <ms>', 'how long to wait for idle agents before failing', parseNonNegativeInteger)
+    .option('--log-path <path>', 'upgrade log path')
+    .option('--npm <command>', 'npm command to use')
+    .option('--package-name <name>', 'npm package name to install', DEFAULT_RUNTIME_PACKAGE)
+    .option('--previous-started-at <iso>', 'server startedAt before the upgrade')
+    .option('--previous-version <version>', 'version to rollback to on failure')
+    .option('--verify-timeout-ms <ms>', 'how long to wait for the upgraded server to verify', parseNonNegativeInteger)
+    .action(async (commandOptions: RuntimeCliOptions) => {
+      await withRuntimeHome(options.topLevel, async () => {
+        await runRuntimeUpgradeWorker(workerOptions(commandOptions));
+      });
+    });
+
   serviceCommand(program, 'start', { installable: true })
     .description('Install the managed runtime if needed, then start local Anima services')
     .action(async (options: RuntimeCliOptions) => {
@@ -144,6 +205,24 @@ export function printRuntimeStatus(status: RuntimeStatus): void {
   if (status.metadata) {
     console.log(`requested: ${status.metadata.requested}`);
     console.log(`installedAt: ${status.metadata.installedAt}`);
+  }
+}
+
+export function printUpgradeStatus(status: RuntimeUpgradeStatusResponse): void {
+  console.log(`runtime: ${status.currentVersion}`);
+  console.log(`releaseTrack: ${status.releaseTrack}`);
+  console.log(`latestOnTrack: ${status.latestOnTrack ?? 'unknown'}`);
+  console.log(`update: ${status.updateAvailable ? 'available' : 'none'}`);
+  console.log(`checkedAt: ${status.checkedAt}`);
+  if (status.checkError) console.log(`checkError: ${status.checkError.type}: ${status.checkError.message}`);
+  console.log(`gate: ${status.gate.state}${status.gate.blockers.length ? ` (${status.gate.blockers.length} blockers)` : ''}`);
+  if (status.operation.status !== 'idle') {
+    const parts = [
+      status.operation.status,
+      status.operation.targetVersion ? `target=${status.operation.targetVersion}` : undefined,
+      status.operation.error ? `error=${JSON.stringify(status.operation.error)}` : undefined,
+    ].filter(Boolean);
+    console.log(`operation: ${parts.join(' ')}`);
   }
 }
 
@@ -249,4 +328,32 @@ function parseNonNegativeInteger(value: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) throw new Error('value must be a non-negative integer');
   return parsed;
+}
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error('value must be a positive integer');
+  return parsed;
+}
+
+function workerOptions(options: RuntimeCliOptions): RuntimeUpgradeWorkerOptions {
+  if (!options.targetVersion) throw new Error('--target-version is required');
+  const releaseTrack = RuntimeReleaseTrack.parse(options.releaseTrack);
+  return {
+    ...(options.dashboardHost ? { dashboardHost: options.dashboardHost } : {}),
+    ...(options.dashboardPort !== undefined ? { dashboardPort: options.dashboardPort } : {}),
+    ...(options.idleTimeoutMs !== undefined ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
+    ...(options.logPath ? { logPath: options.logPath } : {}),
+    ...(options.npm ? { npmCommand: options.npm } : {}),
+    ...(options.packageName ? { packageName: options.packageName } : {}),
+    ...(options.previousStartedAt ? { previousStartedAt: options.previousStartedAt } : {}),
+    ...(options.previousVersion ? { previousVersion: options.previousVersion } : {}),
+    releaseTrack,
+    targetVersion: options.targetVersion,
+    ...(options.verifyTimeoutMs !== undefined ? { verifyTimeoutMs: options.verifyTimeoutMs } : {}),
+  };
+}
+
+function withRuntimeHome<T>(topLevel: boolean, body: () => Promise<T>): Promise<T> {
+  return topLevel ? withAnimaHome(resolveManagedAnimaHome(), body) : body();
 }

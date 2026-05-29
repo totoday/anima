@@ -1,4 +1,4 @@
-import type { SidebarOrder } from '../../shared/server-settings.js';
+import type { ReleaseTrack, SidebarOrder } from '../../shared/server-settings.js';
 import {
   serverConfigStore,
   type ServerConfig,
@@ -31,6 +31,17 @@ export class ServerSettingsService {
   async getSidebarOrder(): Promise<SidebarOrder> {
     const config = await this.store.read();
     return config.sidebarOrder ?? {};
+  }
+
+  async getReleaseTrack(): Promise<ReleaseTrack> {
+    const config = await this.store.read();
+    return config.releaseTrack ?? 'stable';
+  }
+
+  async setReleaseTrack(releaseTrack: ReleaseTrack): Promise<ReleaseTrack> {
+    const config = await this.store.read();
+    await this.store.write({ ...config, releaseTrack });
+    return releaseTrack;
   }
 
   async setSidebarOrder(sidebarOrder: SidebarOrder): Promise<SidebarOrder> {

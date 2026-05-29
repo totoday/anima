@@ -13,8 +13,14 @@ import { resolveAnimaHome } from '../anima-home.js';
 import { defaultServerSettingsService } from '../settings/settings.service.js';
 import { cleanServiceEnv } from '../services/env.js';
 import { defaultProviderUsageService } from '../provider-usage/provider-usage.service.js';
+import {
+  defaultRuntimeUpgradeService,
+  RuntimeUpgradeConflictError,
+  RuntimeUpgradeUnavailableError,
+} from '../runtime/runtime-upgrade.js';
 import { SidebarOrder } from '../../shared/server-settings.js';
 import { type ServerInfo, type ServicesRestartResponse } from '../../shared/server-info.js';
+import type { RuntimeUpgradeApplyResponse } from '../../shared/runtime-upgrade.js';
 import { PROVIDER_CATALOG, type ProviderAvailability } from '../../shared/provider-catalog.js';
 import { HttpError } from './http.js';
 
@@ -29,7 +35,25 @@ export function registerSystemRoutes(fastify: FastifyInstance): void {
   fastify.get('/api/health', async () => ({ ok: true }));
   fastify.get('/api/provider-availability', async () => detectProviderAvailability());
   fastify.get('/api/provider-usage', async () => defaultProviderUsageService.list());
+  fastify.get('/api/system-update', async () => defaultRuntimeUpgradeService.status());
   fastify.get('/api/server-info', async () => serverInfoForUi());
+  fastify.post('/api/system-update/apply', async (_request, reply) => {
+    try {
+      const config = await defaultServerSettingsService.readConfig();
+      const prepared = await defaultRuntimeUpgradeService.prepareApply({
+        animactlScript: ANIMACTL_SCRIPT,
+        dashboardHost: config.dashboardHost ?? '127.0.0.1',
+        dashboardPort: config.dashboardPort ?? 4174,
+        previousStartedAt: API_SERVER_STARTED_AT,
+      });
+      queueRuntimeUpgrade(reply.raw, prepared.response, prepared.spawn);
+      return reply.status(202).send(prepared.response);
+    } catch (error) {
+      if (error instanceof RuntimeUpgradeConflictError) throw new HttpError(409, error.message);
+      if (error instanceof RuntimeUpgradeUnavailableError) throw new HttpError(503, error.message);
+      throw error;
+    }
+  });
   fastify.post('/api/services/restart', async (_request, reply) => {
     const queued = queueServicesRestart(reply.raw);
     return reply.status(202).send(queued);
@@ -46,6 +70,21 @@ export function registerSystemRoutes(fastify: FastifyInstance): void {
       return reply.status(400).send({ error: 'Invalid sidebar order payload' });
     }
     return { sidebarOrder: await defaultServerSettingsService.setSidebarOrder(parsed.data) };
+  });
+}
+
+function queueRuntimeUpgrade(
+  response: ServerResponse,
+  queued: RuntimeUpgradeApplyResponse,
+  spawnWorker: () => Promise<void>,
+): void {
+  response.once('finish', () => {
+    const timer = setTimeout(() => {
+      void spawnWorker().catch((error) => {
+        console.error(`Failed to queue runtime upgrade: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, queued.delayMs);
+    timer.unref();
   });
 }
 
