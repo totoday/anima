@@ -1,4 +1,5 @@
 packages:
+  - packages/animactl
   - web
 allowBuilds:
   msw: true

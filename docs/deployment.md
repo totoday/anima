@@ -8,7 +8,7 @@ stable user installs isolated from each other.
 | Environment | Code source | Anima home | Purpose |
 | --- | --- | --- | --- |
 | Development | Source checkout, usually `~/anima` | Repo-local `./.anima` or `~/.anima-dev` | Build and test Anima itself |
-| Dogfood / staging | Pinned npm canary package | `~/.anima` for Anima's own live team | Run real usage before stable |
+| Dogfood | Pinned npm canary package | `~/.anima` for Anima's own live team | Run real usage before stable |
 | Stable user install | Pinned npm stable package | User's chosen home, normally `~/.anima` | External users |
 
 Do not run dogfood or stable installs from a development checkout. A development rebuild should not
@@ -25,23 +25,48 @@ Keep these separate:
 For example:
 
 ```text
-~/anima/          source checkout for development
-~/anima-prod/     npm-installed dogfood runtime
-~/.anima/         dogfood runtime data
-~/anima/.anima/   development runtime data
+~/anima/                         source checkout for development
+~/.anima/                        dogfood/stable runtime data
+~/.anima/runtime/current/        npm-installed managed runtime
+~/anima/.anima/                  development runtime data
 ```
 
 The code root can be replaced during an upgrade. The Anima home is durable user data and should not
 move during a normal deploy.
+
+`~/.anima/runtime/current` is a replaceable cache of the npm package. Do not put durable user state
+there. It can be deleted and reinstalled from npm as long as `~/.anima` is intact.
+
+## Managed Runtime Commands
+
+The public npm package exposes a user-facing `anima` entrypoint. `start` and `restart` install the
+package version that `npx` downloaded into `~/.anima/runtime/current`, then run services from that
+pinned runtime:
+
+```bash
+npx @totoday/animactl start          # stable/latest channel user path
+npx @totoday/animactl@canary restart # dogfood path
+npx @totoday/animactl status
+npx @totoday/animactl stop
+```
+
+The admin CLI exposes the lower-level runtime status/install commands:
+
+```bash
+animactl runtime status
+animactl runtime install --channel canary
+```
+
+Set `ANIMA_HOME=/path/to/home` to manage a non-default home. If `ANIMA_HOME` is unset, managed
+runtime commands use `~/.anima` even when the shell is currently inside a source checkout that has a
+repo-local `.anima`.
 
 ## Dogfood Deployment
 
 Anima's own live install should run a pinned canary version, not a mutable checkout:
 
 ```bash
-cd ~/anima-prod
-npm install @totoday/anima@0.2.0-canary.20260529.36fa5d8
-ANIMA_HOME=~/.anima npx animactl services restart
+npx @totoday/animactl@canary restart
 ```
 
 Restarts should stay idle-gated. If agents are active, the restart waits or exits without killing

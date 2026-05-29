@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,6 +9,12 @@ import { loadRuntimeAgents } from '../server/runtime/host.js';
 import { SessionStore } from '../server/storage/schema/session.store.js';
 import { defaultServerSettingsService } from '../server/settings/settings.service.js';
 import { resolveAnimaHome } from '../server/anima-home.js';
+import {
+  installManagedRuntime,
+  packageSpecifier,
+  readManagedRuntimeStatus,
+  resolveManagedAnimaHome,
+} from '../server/runtime/managed-runtime.js';
 import { AgentCreateRequest, PROVIDER_IDLE_TIMEOUT_MS_DEFAULT } from '../shared/agent-config.js';
 import { providerCatalogEntry } from '../shared/provider-catalog.js';
 import { withAnimaHome } from './anima-home.js';
@@ -40,6 +46,81 @@ test('anima home resolution prefers ANIMA_HOME env, then local .anima, then ~/.a
     process.chdir(previousCwd);
     if (previousHome === undefined) delete process.env.ANIMA_HOME;
     else process.env.ANIMA_HOME = previousHome;
+    await rm(rootDir, { force: true, recursive: true });
+  }
+});
+
+test('managed runtime home defaults to ~/.anima instead of the cwd .anima', async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), 'anima-managed-home-test-'));
+  const previousCwd = process.cwd();
+  const previousHome = process.env.ANIMA_HOME;
+  try {
+    delete process.env.ANIMA_HOME;
+    process.chdir(rootDir);
+    await mkdir(join(rootDir, '.anima'));
+
+    assert.equal(resolveAnimaHome(), resolve('.anima'));
+    assert.equal(resolveManagedAnimaHome(), join(homedir(), '.anima'));
+
+    process.env.ANIMA_HOME = join(rootDir, 'explicit-home');
+    assert.equal(resolveManagedAnimaHome(), resolve(rootDir, 'explicit-home'));
+  } finally {
+    process.chdir(previousCwd);
+    if (previousHome === undefined) delete process.env.ANIMA_HOME;
+    else process.env.ANIMA_HOME = previousHome;
+    await rm(rootDir, { force: true, recursive: true });
+  }
+});
+
+test('managed runtime install writes package metadata', async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), 'anima-managed-runtime-test-'));
+  try {
+    const runtimeDir = join(rootDir, 'runtime', 'current');
+    assert.equal(packageSpecifier({ packageName: '@totoday/animactl', version: '0.1.0' }), '@totoday/animactl@0.1.0');
+    assert.equal(packageSpecifier({ packageName: '@totoday/animactl', channel: 'canary' }), '@totoday/animactl@canary');
+    assert.throws(
+      () => packageSpecifier({ packageName: '@totoday/animactl', channel: 'canary', version: '0.1.0' }),
+      /Choose either --version or --channel/,
+    );
+
+    const result = await installManagedRuntime({
+      packageName: '@totoday/animactl',
+      runtimeDir,
+      version: '0.1.0',
+      runner: async (command, args, options) => {
+        assert.equal(command, 'npm');
+        assert.deepEqual(args, [
+          'install',
+          '--prefix',
+          runtimeDir,
+          '--omit=dev',
+          '--no-audit',
+          '--fund=false',
+          '@totoday/animactl@0.1.0',
+        ]);
+        assert.equal(options.cwd, runtimeDir);
+        const packageDir = join(runtimeDir, 'node_modules', '@totoday', 'animactl');
+        await mkdir(packageDir, { recursive: true });
+        await writeFile(
+          join(packageDir, 'package.json'),
+          `${JSON.stringify({ name: '@totoday/animactl', version: '0.1.0' }, null, 2)}\n`,
+          'utf8',
+        );
+        await mkdir(join(packageDir, 'dist', 'server', 'cli'), { recursive: true });
+        await writeFile(join(packageDir, 'dist', 'server', 'cli', 'animactl.js'), '', 'utf8');
+        return { stdout: 'installed', stderr: '' };
+      },
+    });
+
+    assert.equal(result.metadata.packageName, '@totoday/animactl');
+    assert.equal(result.metadata.version, '0.1.0');
+    assert.equal(result.metadata.specifier, '@totoday/animactl@0.1.0');
+
+    const status = await readManagedRuntimeStatus({ packageName: '@totoday/animactl', runtimeDir });
+    assert.equal(status.installed, true);
+    assert.equal(status.version, '0.1.0');
+    assert.equal(status.metadata?.specifier, '@totoday/animactl@0.1.0');
+  } finally {
     await rm(rootDir, { force: true, recursive: true });
   }
 });

@@ -40,6 +40,30 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/animactl:
+    dependencies:
+      '@slack/bolt':
+        specifier: ^4.7.2
+        version: 4.7.2(@types/express@5.0.6)
+      '@slack/web-api':
+        specifier: ^7.15.2
+        version: 7.15.2
+      commander:
+        specifier: ^14.0.3
+        version: 14.0.3
+      fastify:
+        specifier: ^5.8.5
+        version: 5.8.5
+      ignore:
+        specifier: ^7.0.5
+        version: 7.0.5
+      luxon:
+        specifier: ^3.7.2
+        version: 3.7.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   web:
     dependencies:
       '@base-ui/react':
