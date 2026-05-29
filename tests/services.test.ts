@@ -319,6 +319,7 @@ test('services restart drain mode leaves queued inbox items for the new worker',
   const childPids = new Set<number>();
   try {
     const configDir = join(tempDir, '.anima');
+    const resultPath = join(configDir, 'run', 'services-restart-result.json');
     await writeTokenlessAgentConfig(configDir, tempDir);
 
     const start = await runAnimactl(['services', 'start', '--only', 'agent'], {
@@ -341,7 +342,7 @@ test('services restart drain mode leaves queued inbox items for the new worker',
       '--drain-active',
       '--resume-running',
     ], {
-      env: { ANIMA_HOME: configDir },
+      env: { ANIMA_HOME: configDir, ANIMA_RESTART_RESULT_FILE: resultPath },
     });
     collectStartedPids(restart.stdout, childPids);
 
@@ -365,6 +366,7 @@ test('services restart drain mode times out a running item without stopping serv
   const childPids = new Set<number>();
   try {
     const configDir = join(tempDir, '.anima');
+    const resultPath = join(configDir, 'run', 'services-restart-result.json');
     await writeTokenlessAgentConfig(configDir, tempDir);
 
     const start = await runAnimactl(['services', 'start', '--only', 'agent'], {
@@ -389,7 +391,7 @@ test('services restart drain mode times out a running item without stopping serv
       '--drain-timeout-ms',
       '0',
     ], {
-      env: { ANIMA_HOME: configDir },
+      env: { ANIMA_HOME: configDir, ANIMA_RESTART_RESULT_FILE: resultPath },
     });
 
     assert.equal(restart.status, 1);
@@ -402,6 +404,20 @@ test('services restart drain mode times out a running item without stopping serv
     assert.equal(inbox['item_running']?.handling?.status, 'running');
     assert.equal(inbox['item_running']?.handling?.drainRequestedAt, undefined);
     assert.equal(inbox['item_running']?.handling?.drainTimeoutMs, undefined);
+    const result = JSON.parse(await readFile(resultPath, 'utf8')) as {
+      blockers?: Array<{ agentId?: string; itemId?: string; status?: string }>;
+      reason?: string;
+      status?: string;
+    };
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.reason, 'drain_timeout');
+    assert.deepEqual(result.blockers?.map((blocker) => ({
+      agentId: blocker.agentId,
+      itemId: blocker.itemId,
+      status: blocker.status,
+    })), [
+      { agentId: 'anima', itemId: 'item_running', status: 'running' },
+    ]);
   } finally {
     for (const pid of childPids) {
       try {
