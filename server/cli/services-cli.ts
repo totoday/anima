@@ -13,6 +13,8 @@ import {
   DEFAULT_RESTART_DRAIN_TIMEOUT_MS,
   DEFAULT_RESTART_IDLE_TIMEOUT_MS,
   listRestartBlockers,
+  RestartBlockedError,
+  restartBlockerInfo,
   type RestartDrainResult,
   restartBlockedError,
   waitForRestartDrain,
@@ -113,9 +115,10 @@ async function runRestart(opts: ServicesCliOptions): Promise<void> {
   validateRestartDrainOptions(opts);
   const { specs, supervisor } = await resolveServices(opts);
   assertCanControlServices(specs);
-  const gate = await prepareRestartGate(specs, opts);
+  let gate: RestartGateLease | undefined;
   let stopped = false;
   try {
+    gate = await prepareRestartGate(specs, opts);
     for (const spec of specs) await stopService(spec);
     stopped = true;
     await gate.beforeStart();
@@ -125,8 +128,13 @@ async function runRestart(opts: ServicesCliOptions): Promise<void> {
     if (gate.drainResult?.resumedCount) {
       console.log(`restart: ${gate.drainResult.resumedCount} agent item(s) resumed after restart`);
     }
+  } catch (error) {
+    if (error instanceof RestartBlockedError) {
+      await writeRestartResult(blockedRestartResult(error));
+    }
+    throw error;
   } finally {
-    if (!stopped) await gate.cleanup();
+    if (!stopped) await gate?.cleanup();
   }
 }
 
@@ -193,11 +201,21 @@ interface RestartGateLease {
   result: ServicesRestartResult;
 }
 
-interface ServicesRestartResult {
+type ServicesRestartResult = ServicesRestartBlockedResult | ServicesRestartSucceededResult;
+
+interface ServicesRestartSucceededResult {
   fallbackToIdle: boolean;
   mode: 'idle' | 'drain-active';
   requestedCount: number;
   resumedCount: number;
+  status: 'succeeded';
+}
+
+interface ServicesRestartBlockedResult {
+  blockers: ReturnType<typeof restartBlockerInfo>[];
+  message: string;
+  reason: 'became_busy' | 'drain_timeout' | 'idle_timeout';
+  status: 'blocked';
 }
 
 async function prepareRestartGate(specs: ServiceSpec[], opts: ServicesCliOptions): Promise<RestartGateLease> {
@@ -225,7 +243,9 @@ async function prepareRestartGate(specs: ServiceSpec[], opts: ServicesCliOptions
   await waitForRestartIdle(opts.idleTimeoutMs ?? DEFAULT_RESTART_IDLE_TIMEOUT_MS);
 
   const finalBlockers = await listRestartBlockers();
-  if (finalBlockers.length > 0) throw restartBlockedError(finalBlockers, 'Agents became busy before restart.');
+  if (finalBlockers.length > 0) {
+    throw restartBlockedError(finalBlockers, 'Agents became busy before restart.', 'became_busy');
+  }
   return noop;
 }
 
@@ -241,6 +261,16 @@ function idleRestartResult(): ServicesRestartResult {
     mode: 'idle',
     requestedCount: 0,
     resumedCount: 0,
+    status: 'succeeded',
+  };
+}
+
+function blockedRestartResult(error: RestartBlockedError): ServicesRestartResult {
+  return {
+    blockers: error.blockers.map(restartBlockerInfo),
+    message: 'Agents still working — restart did not run. Try again once they reach a safe point.',
+    reason: error.reason,
+    status: 'blocked',
   };
 }
 

@@ -11,11 +11,25 @@ export interface RestartBlocker {
   item: InboxItem;
 }
 
+export type RestartBlockedReason = 'became_busy' | 'drain_timeout' | 'idle_timeout';
+
+export class RestartBlockedError extends Error {
+  constructor(
+    readonly blockers: RestartBlocker[],
+    readonly reason: RestartBlockedReason,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RestartBlockedError';
+  }
+}
+
 export interface RestartDrainResult {
   fallbackToIdle: boolean;
   mode: 'drain-active';
   requestedCount: number;
   resumedCount: number;
+  status: 'succeeded';
 }
 
 export async function waitForRestartIdle(timeoutMs: number): Promise<void> {
@@ -26,7 +40,9 @@ export async function waitForRestartIdle(timeoutMs: number): Promise<void> {
     if (blockers.length === 0) return;
 
     const elapsedMs = Date.now() - startedAt;
-    if (elapsedMs >= timeoutMs) throw restartBlockedError(blockers, 'Timed out waiting for agents to become idle.');
+    if (elapsedMs >= timeoutMs) {
+      throw restartBlockedError(blockers, 'Timed out waiting for agents to become idle.', 'idle_timeout');
+    }
 
     if (!loggedWait) {
       console.error(`Waiting for agents to become idle before restart (timeout ${formatDurationMs(timeoutMs)}).`);
@@ -45,7 +61,7 @@ export async function waitForRestartDrain(input: {
   await requestRestartDrain(input.markerTtlMs ?? drainTimeoutMs + 60_000);
   const initialRunning = await listRestartBlockers({ statuses: ['running'] });
   if (initialRunning.length === 0) {
-    return { fallbackToIdle: false, mode: 'drain-active', requestedCount: 0, resumedCount: 0 };
+    return { fallbackToIdle: true, mode: 'drain-active', requestedCount: 0, resumedCount: 0, status: 'succeeded' };
   }
 
   await Promise.all(initialRunning.map(({ agentId, item }) =>
@@ -57,7 +73,13 @@ export async function waitForRestartDrain(input: {
     const blockers = await listRestartBlockers({ statuses: ['running'] });
     if (blockers.length === 0) {
       const resumedCount = await countRequeuedItems(initialRunning);
-      return { fallbackToIdle: false, mode: 'drain-active', requestedCount: initialRunning.length, resumedCount };
+      return {
+        fallbackToIdle: false,
+        mode: 'drain-active',
+        requestedCount: initialRunning.length,
+        resumedCount,
+        status: 'succeeded',
+      };
     }
 
     const elapsedMs = Date.now() - startedAt;
@@ -66,7 +88,11 @@ export async function waitForRestartDrain(input: {
       await Promise.all(initialRunning.map(({ agentId, item }) =>
         new WakeQueueService(agentId).clearDrainRequest(item.id).catch(() => undefined),
       ));
-      throw restartBlockedError(blockers, 'Timed out waiting for running agents to reach a restart drain point.');
+      throw restartBlockedError(
+        blockers,
+        'Timed out waiting for running agents to reach a restart drain point.',
+        'drain_timeout',
+      );
     }
 
     if (!loggedWait) {
@@ -102,8 +128,12 @@ async function countRequeuedItems(blockers: RestartBlocker[]): Promise<number> {
   return count;
 }
 
-export function restartBlockedError(blockers: RestartBlocker[], prefix: string): Error {
-  return new Error([
+export function restartBlockedError(
+  blockers: RestartBlocker[],
+  prefix: string,
+  reason: RestartBlockedReason,
+): RestartBlockedError {
+  return new RestartBlockedError(blockers, reason, [
     `${prefix} Restart blocked because agent inboxes are not idle:`,
     ...blockers.map(formatBlocker),
     'Use --force to restart anyway.',
@@ -121,6 +151,24 @@ export function formatBlocker({ agentId, item }: RestartBlocker): string {
     itemSummary(item) ? `text=${JSON.stringify(itemSummary(item))}` : undefined,
   ].filter(Boolean);
   return `- ${parts.join(' ')}`;
+}
+
+export function restartBlockerInfo({ agentId, item }: RestartBlocker): {
+  agentId: string;
+  itemId: string;
+  since: string;
+  status: InboxItem['handling']['status'];
+  summary?: string;
+  workerId?: string;
+} {
+  return {
+    agentId,
+    itemId: item.id,
+    since: itemStatusAt(item),
+    status: item.handling.status,
+    ...(itemSummary(item) ? { summary: itemSummary(item) } : {}),
+    ...(item.handling.workerId ? { workerId: item.handling.workerId } : {}),
+  };
 }
 
 function blockerSortKey(blocker: RestartBlocker): string {

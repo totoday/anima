@@ -1591,7 +1591,67 @@ test('server-info exposes the last standalone restart result for UI echoes', asy
         mode: 'drain-active',
         requestedCount: 2,
         resumedCount: 2,
+        status: 'succeeded',
       });
+    } finally {
+      server.close();
+    }
+  });
+  await rm(stateDir, { force: true, recursive: true });
+});
+
+test('server-info exposes blocked standalone restart results for honest UI errors', async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), 'anima-web-api-blocked-restart-test-'));
+  await writeConfig(stateDir);
+  await mkdir(join(stateDir, 'run'), { recursive: true });
+  await writeFile(
+    join(stateDir, 'run', 'services-restart-result.json'),
+    `${JSON.stringify({
+      blockers: [
+        {
+          agentId: 'runner',
+          itemId: 'item_running',
+          since: '2026-05-29T12:38:45.950Z',
+          status: 'running',
+          summary: 'Long-running task',
+          workerId: 'runner:123',
+        },
+      ],
+      completedAt: '2026-05-29T12:46:22.000Z',
+      message: 'Agents still working — restart did not run. Try again once they reach a safe point.',
+      reason: 'drain_timeout',
+      status: 'blocked',
+    })}\n`,
+    'utf8',
+  );
+  await withAnimaHome(stateDir, async () => {
+    const server = await createWebServer();
+    try {
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Expected TCP address');
+
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/server-info`);
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as {
+        lastRestart?: {
+          blockers?: Array<{ agentId: string; itemId: string; status: string }>;
+          logPath?: string;
+          reason?: string;
+          status?: string;
+        };
+      };
+      assert.equal(body.lastRestart?.status, 'blocked');
+      assert.equal(body.lastRestart?.reason, 'drain_timeout');
+      assert.deepEqual(body.lastRestart?.blockers?.map((blocker) => ({
+        agentId: blocker.agentId,
+        itemId: blocker.itemId,
+        status: blocker.status,
+      })), [
+        { agentId: 'runner', itemId: 'item_running', status: 'running' },
+      ]);
+      assert.equal(body.lastRestart?.logPath, join(stateDir, 'logs', 'services-restart.log'));
     } finally {
       server.close();
     }

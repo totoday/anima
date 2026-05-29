@@ -141,6 +141,7 @@ export interface RestartEchoSignal {
   fallbackToIdle?: boolean;
   mode?: 'idle' | 'drain-active';
   resumedCount?: number;
+  status?: 'blocked' | 'succeeded';
 }
 
 export type RestartEcho = { kind: 'resumed'; count: number } | { kind: 'restarted' } | null;
@@ -155,6 +156,7 @@ export type RestartEcho = { kind: 'resumed'; count: number } | { kind: 'restarte
  */
 export function restartEcho(signal: RestartEchoSignal | undefined, now: number): RestartEcho {
   if (!signal?.completedAt) return null;
+  if (signal.status === 'blocked') return null;
   const completed = Date.parse(signal.completedAt);
   if (!Number.isFinite(completed) || now - completed > RESTART_ECHO_FRESH_MS) return null;
   if (signal.mode === 'drain-active' && !signal.fallbackToIdle && (signal.resumedCount ?? 0) > 0) {
