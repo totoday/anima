@@ -1,0 +1,41 @@
+{
+  "name": "@totoday/animactl",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": false,
+  "description": "Operator CLI for installing and running Anima.",
+  "homepage": "https://github.com/totoday/anima#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/totoday/anima.git",
+    "directory": "packages/animactl"
+  },
+  "bugs": {
+    "url": "https://github.com/totoday/anima/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "anima": "bin/anima",
+    "animactl": "bin/animactl"
+  },
+  "files": [
+    "bin/",
+    "dist/server/",
+    "dist/shared/",
+    "dist/web/",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@slack/bolt": "^4.7.2",
+    "@slack/web-api": "^7.15.2",
+    "commander": "^14.0.3",
+    "fastify": "^5.8.5",
+    "ignore": "^7.0.5",
+    "luxon": "^3.7.2",
+    "zod": "^4.4.3"
+  }
+}

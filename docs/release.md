@@ -92,10 +92,8 @@ Publishing uses npm Trusted Publishing, not a long-lived `NPM_TOKEN`. The npm tr
 is tied to the `publish.yml` workflow:
 
 ```bash
-npm trust github @totoday/anima \
-  --repo totoday/anima \
-  --file publish.yml \
-  --allow-publish
+npm trust github @totoday/anima --repo totoday/anima --file publish.yml --allow-publish
+npm trust github @totoday/animactl --repo totoday/anima --file publish.yml --allow-publish
 ```
 
 Keep the workflow filename stable. If it changes, update the npm trusted publisher configuration
