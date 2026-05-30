@@ -11,7 +11,7 @@ import {
   defaultRuntimeUpgradeService,
   RuntimeUpgradeConflictError,
   RuntimeUpgradeUnavailableError,
-} from '../runtime/runtime-upgrade.js';
+} from '../runtime-management/runtime-upgrade.js';
 import { SidebarOrder } from '../../shared/server-settings.js';
 import { HttpError } from './http.js';
 

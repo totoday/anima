@@ -22,6 +22,7 @@ It does not own provider internals. Codex, Claude, and Kimi adapters speak provi
 - `web/host.ts` starts the local web API and static web server.
 - `services/supervisor.ts` owns daemon process control; `cli/animactl.ts` exposes it.
 - `cli/anima.ts` is the agent-facing CLI used inside provider runtimes for audited side effects.
+- `runtime-management/` owns the npm-installed runtime, release-track checks, and system-update apply worker.
 
 The runtime server reconciles runnable agents in place. A freshly connected agent comes online without restarting other agents, and a running agent reloads itself when runtime-bound config changes. Reloads are per-agent and wait for the current item to finish; full service restarts are still reserved for server code/dependency changes.
 
@@ -97,6 +98,8 @@ An agent is not one service. It is a small group of agent-scoped services over o
 Agent runtime execution is intentionally not exposed as a broad `AgentRuntimeService`. Runtime code wires an `AgentRuntimeWorker`, `AgentRuntimeBridge`, and provider adapter for each runnable agent. That layer owns claiming wake work, provider prompt/input construction, active-run follow-up append, idle/stop behavior, and runtime event recording. Runtime session persistence goes through `RuntimeSessionService`.
 
 `RuntimeService` is the web/API view over runtime state. It lists statuses and stops the current item. It should not become the owner of agent config, Slack connection, reminders, sessions, activity history, or provider execution internals.
+
+Managed runtime installation and upgrade orchestration are intentionally separate from agent execution. They live under `runtime-management/`, not `runtime/`, because they operate on the local npm package and services process rather than on a provider turn.
 
 ## Registry And Platform Services
 
