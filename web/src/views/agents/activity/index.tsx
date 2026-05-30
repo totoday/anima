@@ -4,14 +4,16 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { fetchAgentStatuses, fetchAgentActivities, fetchAgentMessages } from '@/api/agents';
 import { buildActivityFeed, buildMessageFeed, type ActivityFeedItem } from '@/lib/activity-feed';
-import { activityIsFailure, isNarrativeStep } from '@/lib/activities';
-import { clockHM, dateKey } from '@/lib/format';
+import { activityIsFailure, activityRow, isNarrativeStep } from '@/lib/activities';
+import { clockHM, dateKey, formatRelativeShort } from '@/lib/format';
 import { queryKeys, refetchIntervals } from '@/lib/query-keys';
 import { useActivityFilters, type ActivityLens, type ActivityDir } from '@/hooks/useActivityFilters';
+import { useNow } from '@/hooks/useNow';
 import { MessageInRow, MessageOutRow, FileOutRow } from './MessageRows';
 import { ReactOutRow, StepRow, WorkingIndicator, DaySection } from './AuditRows';
-import type { AgentActivityFeedEvent } from '@shared/activity';
+import type { Activity as ActivityRecord, AgentActivityFeedEvent } from '@shared/activity';
 import type { AgentMessageRecord } from '@shared/messages';
+import type { AgentStatusSummary } from '@shared/snapshot';
 
 // ---------------------------------------------------------------------------
 // Mobile direction sub-filter pill (All / Inbox / Outbox).
@@ -91,6 +93,55 @@ function isMessageItem(item: ActivityFeedItem): boolean {
   );
 }
 
+function ActivityStatusSummary({
+  status,
+  latestActivity,
+  now,
+}: {
+  status: AgentStatusSummary | undefined;
+  latestActivity: ActivityRecord | undefined;
+  now: Date;
+}) {
+  if (!status) return null;
+  const running = Boolean(status.currentItemId);
+  const queued = status.queueDepth > 0;
+  const state = running ? 'Working' : queued ? 'Queued' : 'Idle';
+  const dot = running
+    ? 'var(--color-health-warn)'
+    : queued
+      ? 'var(--color-health-idle)'
+      : 'var(--color-health-ok)';
+  const latest = latestActivity && isNarrativeStep(latestActivity)
+    ? activityRow(latestActivity)
+    : undefined;
+
+  return (
+    <div className="shrink-0 border-b border-border-soft bg-surface-raised/30 px-4 py-2 md:px-10">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="chrome flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-text-muted">
+          <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: dot }} />
+          {state}
+        </span>
+        {running && status.currentItemStartedAt && (
+          <span className="font-sans text-[11px] text-text-subtle">
+            started {formatRelativeShort(status.currentItemStartedAt, now)}
+          </span>
+        )}
+        {queued && (
+          <span className="font-sans text-[11px] text-text-subtle">
+            {status.queueDepth} queued
+          </span>
+        )}
+        {latest && (
+          <span className="min-w-0 flex-1 basis-64 truncate font-sans text-[11px] text-text-muted">
+            latest: {latest.title}{latest.target ? ` · ${latest.target}` : ''}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Activity view
 // ---------------------------------------------------------------------------
@@ -99,9 +150,11 @@ export default function Activity() {
   const { data: agentStatuses = [] } = useQuery({
     queryKey: queryKeys.agentStatuses(),
     queryFn: fetchAgentStatuses,
+    refetchInterval: refetchIntervals.agentStatuses,
   });
   const { agentId } = useParams<{ agentId: string }>();
   const { failedOnly, lens, dir, showAllSteps, setFailedOnly, setLens, setDir, setShowAllSteps } = useActivityFilters();
+  const now = useNow();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   // True when the user is near (or at) the bottom of the scroll container.
@@ -381,6 +434,12 @@ export default function Activity() {
           </>
         )}
       </div>
+
+      <ActivityStatusSummary
+        status={currentStatus}
+        latestActivity={latestCurrentItemActivity}
+        now={now}
+      />
 
       <div
         ref={scrollContainerRef}

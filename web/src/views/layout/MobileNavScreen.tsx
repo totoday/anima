@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FolderTree, Plus, Server } from 'lucide-react';
+import { FolderTree, GripVertical, Plus, Server } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -29,8 +29,12 @@ function MobileSortableItem({ id, children }: { id: string; children: React.Reac
       style={{ transform: CSS.Transform.toString(transform), transition: transition ?? undefined }}
       {...attributes}
       {...listeners}
-      className={['relative select-none', isDragging ? 'z-50 opacity-40' : ''].join(' ')}
+      className={['group/drag relative select-none', isDragging ? 'z-50 opacity-40' : ''].join(' ')}
     >
+      <GripVertical
+        aria-hidden
+        className="pointer-events-none absolute left-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-subtle opacity-35"
+      />
       {children}
     </div>
   );
@@ -132,7 +136,7 @@ export default function MobileNavScreen({
                       <button
                         onClick={() => handleSelectKb(kb.id)}
                         className={[
-                          'relative flex min-h-[44px] w-full items-center gap-2.5 rounded-sm px-3 py-3 text-left transition-colors',
+                          'relative flex min-h-[44px] w-full items-center gap-2.5 rounded-sm py-3 pl-6 pr-3 text-left transition-colors',
                           active ? 'bg-surface-elevated' : 'hover:bg-surface-elevated/60',
                         ].join(' ')}
                       >
@@ -197,7 +201,7 @@ export default function MobileNavScreen({
                       <button
                         onClick={() => handleSelectAgent(agent.id)}
                         className={[
-                          'relative flex min-h-[44px] w-full items-center gap-2.5 rounded-sm px-3 py-3 text-left transition-colors',
+                          'relative flex min-h-[44px] w-full items-center gap-2.5 rounded-sm py-3 pl-6 pr-3 text-left transition-colors',
                           isSelected ? 'bg-surface-elevated' : 'hover:bg-surface-elevated/60',
                         ].join(' ')}
                       >

@@ -144,7 +144,7 @@ export function OwnerPickerForm({
     const val = e.target.value;
     setInputValue(val);
     setIsOpen(true);
-    setHighlightIdx(-1);
+    setHighlightIdx(0);
     // Clear selection if user changes the query away from the selected name
     if (selectedId && val !== (selectedUser?.displayName ?? '')) {
       setSelectedId('');
@@ -193,6 +193,12 @@ export function OwnerPickerForm({
       e.preventDefault();
     } else if (e.key === 'ArrowUp') {
       setHighlightIdx((i) => Math.max(i - 1, 0));
+      e.preventDefault();
+    } else if (e.key === 'Home') {
+      setHighlightIdx(0);
+      e.preventDefault();
+    } else if (e.key === 'End') {
+      setHighlightIdx(Math.max(filtered.length - 1, 0));
       e.preventDefault();
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -273,9 +279,10 @@ export function OwnerPickerForm({
           ref={inputRef}
           role="combobox"
           aria-expanded={isOpen}
-          aria-controls={listboxId}
+          aria-controls={isOpen ? listboxId : undefined}
           aria-activedescendant={activeDescendant}
           aria-autocomplete="list"
+          aria-haspopup="listbox"
           type="text"
           value={inputValue}
           onChange={handleInputChange}
@@ -299,10 +306,11 @@ export function OwnerPickerForm({
             ref={listboxRef}
             id={listboxId}
             role="listbox"
+            aria-label="Slack members"
             className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-sm border border-border-soft bg-surface shadow-deep"
           >
             {filtered.length === 0 ? (
-              <div className="px-3 py-2 font-sans text-[12px] text-text-muted">
+              <div role="status" className="px-3 py-2 font-sans text-[12px] text-text-muted">
                 {candidates.length === 0 ? 'No workspace members found.' : 'No members match.'}
               </div>
             ) : (
@@ -310,15 +318,15 @@ export function OwnerPickerForm({
                 const selected = user.slackUserId === selectedId;
                 const highlighted = idx === highlightIdx;
                 return (
-                  <button
+                  <div
                     key={user.slackUserId}
                     id={optionId(user.slackUserId)}
                     role="option"
                     aria-selected={selected}
-                    type="button"
                     onMouseDown={(e) => { e.preventDefault(); handleSelect(user); }}
+                    onClick={() => handleSelect(user)}
                     className={[
-                      'flex w-full items-center gap-3 px-3 py-2 text-left transition-colors',
+                      'flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-colors',
                       highlighted ? 'bg-accent/10' : selected ? 'bg-accent/5' : 'hover:bg-surface-elevated',
                     ].join(' ')}
                   >
@@ -338,7 +346,7 @@ export function OwnerPickerForm({
                       )}
                     </span>
                     {selected && <Check className="h-3.5 w-3.5 shrink-0 text-accent" />}
-                  </button>
+                  </div>
                 );
               })
             )}

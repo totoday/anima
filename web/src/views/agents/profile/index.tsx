@@ -12,6 +12,7 @@ import {
   updateAgentProvider,
 } from '@/api/agents';
 import { queryKeys } from '@/lib/query-keys';
+import { useNow } from '@/hooks/useNow';
 
 import { providerCatalog } from '@shared/provider-catalog';
 import { useParams } from 'react-router-dom';
@@ -81,11 +82,7 @@ export default function Profile() {
 
   // Must be declared before any early returns — hooks must run in the same
   // order every render regardless of conditional branches.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
 
   const providerOptions = providerCatalog();
 
