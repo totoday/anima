@@ -1,6 +1,6 @@
-import { Children, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
+import { Children, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Download, ExternalLink, List } from 'lucide-react';
+import { Copy, Download, ExternalLink, List } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Highlight, themes } from 'prism-react-renderer';
@@ -9,6 +9,45 @@ import { buildKbPath, buildKbRawPath } from '@/lib/url-state';
 import { formatBytes } from '@/lib/format';
 import { kbDownloadUrl } from '@/api/kb';
 import type { KbFile } from '@shared/kb';
+
+// ---------------------------------------------------------------------------
+// CopyButton
+// ---------------------------------------------------------------------------
+
+function CopyButton({ text, variant = 'floating' }: { text: string; variant?: 'floating' | 'inline' }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
+    });
+  }, [text]);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : 'Copy'}
+      aria-label={copied ? 'Copied' : 'Copy code'}
+      className={
+        variant === 'floating'
+          ? 'chrome absolute right-2 top-2 flex h-7 items-center gap-1 rounded-sm bg-surface-elevated/80 px-2 text-[11px] text-text-subtle opacity-0 transition-opacity hover:bg-surface-elevated hover:text-text focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
+          : 'chrome flex h-7 items-center gap-1 rounded-sm px-2 text-[11px] text-text-subtle transition-colors hover:bg-surface-hover hover:text-text focus-visible:bg-surface-hover focus-visible:text-text'
+      }
+    >
+      <Copy className="h-3 w-3" />
+      {copied && <span>Copied!</span>}
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -61,7 +100,18 @@ function childrenText(children: ReactNode): string {
 
 function makeHeading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
   return function Heading({ children }: { children?: ReactNode }) {
-    return <Tag id={slugify(childrenText(children))}>{children}</Tag>;
+    const id = slugify(childrenText(children));
+    return (
+      <Tag
+        id={id}
+        onClick={() => {
+          window.history.replaceState(null, '', `#${id}`);
+        }}
+        className="cursor-pointer"
+      >
+        {children}
+      </Tag>
+    );
   };
 }
 
@@ -162,7 +212,12 @@ export function TocButton({ entries }: { entries: TocEntry[] }) {
               <a
                 key={i}
                 href={`#${entry.id}`}
-                onClick={() => setOpen(false)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setOpen(false);
+                  window.history.replaceState(null, '', `#${entry.id}`);
+                  document.getElementById(entry.id)?.scrollIntoView({ behavior: 'smooth' });
+                }}
                 className="flex min-h-[40px] items-center font-sans text-[13px] text-text-muted transition-colors hover:bg-surface-elevated/60 hover:text-text"
                 style={{ paddingLeft: `${0.75 + (entry.depth - 1) * 0.75}rem`, paddingRight: '0.75rem' }}
               >
@@ -256,6 +311,47 @@ function makeKbLinkComponent(
 }
 
 // ---------------------------------------------------------------------------
+// ImageLightbox
+// ---------------------------------------------------------------------------
+
+function ImageLightbox({ src, alt }: { src: string; alt: string }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  return (
+    <>
+      <img
+        src={src}
+        alt={alt}
+        onClick={() => setOpen(true)}
+        className="max-w-full cursor-zoom-in rounded"
+      />
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <img
+            src={src}
+            alt={alt}
+            className="max-h-full max-w-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // FileContent
 // ---------------------------------------------------------------------------
 
@@ -275,12 +371,66 @@ export function FileContent({
   const rawUrl = buildKbRawPath(id, filePath);
   const navigate = useNavigate();
 
+  // Scroll to hash target after markdown renders.
+  useEffect(() => {
+    if (file?.kind !== 'markdown') return;
+    const hash = window.location.hash.slice(1);
+    if (!hash) return;
+    const el = document.getElementById(hash);
+    if (el) {
+      // Small delay to let ReactMarkdown finish rendering.
+      const t = setTimeout(() => el.scrollIntoView({ behavior: 'smooth' }), 100);
+      return () => clearTimeout(t);
+    }
+  }, [file]);
+
   // Memoised so ReactMarkdown sees stable component references (avoids remounting
   // all links on every parent re-render while the file content stays the same).
   const markdownComponents = useMemo(
     () => ({
       a: makeKbLinkComponent(id, filePath, navigate),
       ...headingComponents,
+      img: ({ src, alt }: React.ComponentPropsWithoutRef<'img'>) => {
+        let resolvedSrc = src ?? '';
+        if (resolvedSrc && !/^[a-z][a-z\d+\-.]*:/i.test(resolvedSrc) && !resolvedSrc.startsWith('#')) {
+          const resolved = resolveKbHref(resolvedSrc, filePath);
+          if (resolved) {
+            resolvedSrc = buildKbRawPath(id, resolved.path);
+          }
+        }
+        return <ImageLightbox src={resolvedSrc} alt={alt ?? ''} />;
+      },
+      table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
+        <div className="overflow-x-auto">
+          <table {...props}>{children}</table>
+        </div>
+      ),
+      pre: ({ children }: { children?: ReactNode }) => {
+        const codeText = childrenText(children);
+        // ReactMarkdown wraps fenced code in <code className="language-xxx">.
+        let lang = '';
+        const first = Children.toArray(children)[0];
+        if (isValidElement(first)) {
+          const cls = (first.props as { className?: string }).className ?? '';
+          const m = cls.match(/language-(\S+)/);
+          if (m) lang = m[1];
+        }
+        return (
+          <div className="kb-markdown-code-block group">
+            <div className="chrome flex min-h-9 items-center justify-between gap-2 border-b border-border-soft/70 bg-surface-raised/45 px-2 py-1">
+              {lang ? (
+                <span className="rounded-sm px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-text-subtle">
+                  {lang}
+                </span>
+              ) : (
+                <span aria-hidden="true" />
+              )}
+              <CopyButton text={codeText} variant="inline" />
+            </div>
+            <pre>{children}</pre>
+          </div>
+        );
+      },
     }),
     [id, filePath, navigate],
   );
@@ -330,7 +480,7 @@ export function FileContent({
     return (
       <div className="flex h-full flex-col">
         <div className="flex flex-1 items-center justify-center overflow-auto bg-surface-elevated/30 p-6">
-          <img src={rawUrl} alt={file.name} className="max-h-full max-w-full object-contain" />
+          <ImageLightbox src={rawUrl} alt={file.name} />
         </div>
       </div>
     );
@@ -400,29 +550,34 @@ export function FileContent({
     // clipped to the container — this is what makes long JSON values scrollable
     // instead of visually truncated with no affordance.
     <div className="min-h-0 flex-1 overflow-auto">
-      <Highlight code={body.replace(/\n$/, '')} language={language} theme={themes.github}>
-        {({ className, style, tokens, getLineProps, getTokenProps }) => (
-          <pre
-            className={`${className} min-h-full min-w-max px-5 py-4 font-mono text-[12.5px] leading-relaxed`}
-            style={{ ...style, background: 'transparent' }}
-          >
-            {tokens.map((line, i) => {
-              const lineProps = getLineProps({ line });
-              return (
-                <div key={i} {...lineProps}>
-                  <span className="mr-4 inline-block w-8 select-none text-right text-text-subtle/50">
-                    {i + 1}
-                  </span>
-                  {line.map((token, key) => {
-                    const tokenProps = getTokenProps({ token });
-                    return <span key={key} {...tokenProps} />;
-                  })}
-                </div>
-              );
-            })}
-          </pre>
-        )}
-      </Highlight>
+      <div className="relative group min-h-0 flex-1 overflow-auto">
+        <CopyButton text={body} />
+        <Highlight code={body.replace(/\n$/, '')} language={language} theme={themes.github}>
+          {({ className, style, tokens, getLineProps, getTokenProps }) => (
+            <pre
+              className={`${className} min-h-full font-mono text-[12.5px] leading-relaxed`}
+              style={{ ...style, background: 'transparent', padding: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            >
+              <div className="px-5 py-4">
+                {tokens.map((line, i) => {
+                  const lineProps = getLineProps({ line });
+                  return (
+                    <div key={i} {...lineProps}>
+                      <span className="mr-4 inline-block w-8 select-none text-right text-text-subtle/50">
+                        {i + 1}
+                      </span>
+                      {line.map((token, key) => {
+                        const tokenProps = getTokenProps({ token });
+                        return <span key={key} {...tokenProps} />;
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </pre>
+          )}
+        </Highlight>
+      </div>
     </div>
   );
 }
