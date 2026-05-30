@@ -41,7 +41,11 @@ export default function Kb() {
     isLoading: kbLoading,
   } = useQuery({ queryKey: queryKeys.kb(id), queryFn: () => fetchKb(id) });
 
-  const { data: tree, error: treeError } = useQuery({
+  const {
+    data: tree,
+    error: treeError,
+    isLoading: treeLoading,
+  } = useQuery({
     queryKey: queryKeys.kbTree(id),
     queryFn: () => fetchKbTree(id),
     refetchInterval: 30_000,
@@ -389,6 +393,10 @@ export default function Kb() {
                   }
                 />
               </div>
+            </div>
+          ) : treeLoading ? (
+            <div className="flex h-full flex-col items-start justify-start p-8">
+              <div className="font-sans text-[13px] text-text-subtle">Loading files…</div>
             </div>
           ) : readmePath ? (
             /* README default */
