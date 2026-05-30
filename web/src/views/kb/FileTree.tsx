@@ -116,7 +116,7 @@ export function TreeRow({
           ) : (
             <FolderClosed className="h-3.5 w-3.5 shrink-0 text-text-subtle" />
           )}
-          <span className="truncate">{node.name}</span>
+          <span className="truncate" title={node.name}>{node.name}</span>
           <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border-soft bg-surface px-2 py-1 text-xs text-text shadow-deep group-hover:block">
             {node.name}
           </span>
@@ -156,7 +156,7 @@ export function TreeRow({
     >
       <span className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <KindIcon kind={kbFileKind(node.name)} className={iconClass} />
-      <span className="truncate">
+      <span className="truncate" title={node.name}>
         <HighlightMatch text={node.name} query={filterQuery ?? ''} />
       </span>
       <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-border-soft bg-surface px-2 py-1 text-xs text-text shadow-deep group-hover:block">

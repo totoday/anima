@@ -273,9 +273,11 @@ export default function Kb() {
         <nav
           className={[
             'flex shrink-0 flex-col overflow-hidden border-r border-border-soft bg-surface-raised/40',
-            mobileShowRight ? 'hidden md:flex' : 'w-full md:flex',
+            mobileShowRight
+              ? 'hidden md:flex md:w-[var(--kb-tree-width)]'
+              : 'w-full md:flex md:w-[var(--kb-tree-width)]',
           ].join(' ')}
-          style={{ width: mobileShowRight ? undefined : '100%', minWidth: mobileShowRight ? treeWidth : undefined, maxWidth: mobileShowRight ? treeWidth : undefined }}
+          style={{ '--kb-tree-width': `${treeWidth}px` } as React.CSSProperties}
         >
           {/* Filter input — pinned above the file tree */}
           <div className="flex shrink-0 items-center border-b border-border-soft px-3 min-h-[44px]">
