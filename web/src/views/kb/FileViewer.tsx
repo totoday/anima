@@ -36,7 +36,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       onClick={handleCopy}
       title={copied ? 'Copied!' : 'Copy'}
-      className="chrome absolute right-2 top-2 flex h-7 items-center gap-1 rounded-sm bg-surface-elevated/80 px-2 text-[11px] text-text-subtle opacity-0 transition-opacity hover:bg-surface-elevated hover:text-text group-hover:opacity-100"
+      className="chrome absolute right-2 top-2 flex h-7 items-center gap-1 rounded-sm bg-surface-elevated/80 px-2 text-[11px] text-text-subtle opacity-0 transition-opacity hover:bg-surface-elevated hover:text-text focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
     >
       <Copy className="h-3 w-3" />
       {copied && <span>Copied!</span>}
@@ -385,9 +385,16 @@ export function FileContent({
     () => ({
       a: makeKbLinkComponent(id, filePath, navigate),
       ...headingComponents,
-      img: ({ src, alt }: React.ComponentPropsWithoutRef<'img'>) => (
-        <ImageLightbox src={src ?? ''} alt={alt ?? ''} />
-      ),
+      img: ({ src, alt }: React.ComponentPropsWithoutRef<'img'>) => {
+        let resolvedSrc = src ?? '';
+        if (resolvedSrc && !/^[a-z][a-z\d+\-.]*:/i.test(resolvedSrc) && !resolvedSrc.startsWith('#')) {
+          const resolved = resolveKbHref(resolvedSrc, filePath);
+          if (resolved) {
+            resolvedSrc = buildKbRawPath(id, resolved.path);
+          }
+        }
+        return <ImageLightbox src={resolvedSrc} alt={alt ?? ''} />;
+      },
       table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
         <div className="overflow-x-auto">
           <table {...props}>{children}</table>
