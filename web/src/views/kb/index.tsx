@@ -272,7 +272,7 @@ export default function Kb() {
         {/* Left panel */}
         <nav
           className={[
-            'flex shrink-0 flex-col overflow-hidden border-r border-border-soft bg-surface-raised/40',
+            'flex shrink-0 flex-col bg-surface-raised/40',
             mobileShowRight
               ? 'hidden md:flex md:w-[var(--kb-tree-width)]'
               : 'w-full md:flex md:w-[var(--kb-tree-width)]',
