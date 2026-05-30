@@ -15,8 +15,7 @@ const lastViewedFileByKb = new Map<string, string>();
 
 function restoredExpandedDirs(kbId: string, filePath: string | null): Set<string> {
   const expanded = new Set(expandedDirsByKb.get(kbId) ?? []);
-  const pathToReveal = filePath ?? lastViewedFileByKb.get(kbId) ?? null;
-  for (const ancestor of ancestorsOf(pathToReveal)) expanded.add(ancestor);
+  for (const ancestor of ancestorsOf(filePath)) expanded.add(ancestor);
   return expanded;
 }
 
