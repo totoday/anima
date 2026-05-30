@@ -40,7 +40,7 @@ export default function MobileTopBar() {
   const currentItemId = status?.currentItemId;
   const isRunning = Boolean(currentItemId);
 
-  const displayName = agent?.profile?.displayName ?? agent?.id ?? agentId;
+  const displayName = agent?.profile?.displayName?.trim() || agentId;
   const initial = agent ? initialOf(displayName) : '?';
   const color = idx >= 0 ? agentColor(idx) : 'var(--color-health-idle)';
   const enabled = agent?.enabled !== false;

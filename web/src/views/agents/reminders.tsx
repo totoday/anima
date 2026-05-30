@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { fetchAgentReminders } from '@/api/agents';
 import { queryKeys } from '@/lib/query-keys';
 import { formatRelativeShort } from '@/lib/format';
+import { useNow } from '@/hooks/useNow';
 import type { Reminder, ReminderSchedule } from '@shared/reminder';
 
 function describeSchedule(schedule: ReminderSchedule, nextDueAt?: string): string {
@@ -192,11 +193,7 @@ export default function Reminders() {
   }, [agentId]);
 
   // Tick every minute so relative timestamps stay fresh.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
 
   const {
     data: reminders = [],

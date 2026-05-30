@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { RefreshCw, X } from 'lucide-react';
 import { fetchServerInfo, fetchProviderUsage, pingHealth } from '@/api/system';
 import { shortIso, formatUptime } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
+import { useNow } from '@/hooks/useNow';
 import RestartButton from './RestartButton';
 import RuntimeUpgradeRow from './RuntimeUpgrade';
 import type { ProviderUsageRow, ProviderUsageWindow, ProviderUsageExtra } from '@shared/provider-usage';
@@ -18,8 +19,8 @@ interface Props {
 // ---------------------------------------------------------------------------
 
 /** "1h 26m", "5d", "3m" from an ISO reset timestamp */
-function formatReset(resetsAt: string): string {
-  const ms = new Date(resetsAt).getTime() - Date.now();
+function formatReset(resetsAt: string, now: Date): string {
+  const ms = new Date(resetsAt).getTime() - now.getTime();
   if (ms <= 0) return 'now';
   const totalMin = Math.round(ms / 60_000);
   const d = Math.floor(totalMin / 1440);
@@ -49,13 +50,38 @@ function barColor(pct: number): string {
 /** Format a single extra row value */
 function extraValue(e: ProviderUsageExtra): string {
   if (e.unlimited) return '∞';
-  if (e.balance !== undefined) return e.currency ? `${e.balance} ${e.currency}` : String(e.balance);
-  if (e.limit !== undefined && e.used !== undefined) return String(e.limit - e.used);
-  if (e.limit !== undefined) return String(e.limit);
+  if (e.balance !== undefined) {
+    if (e.label.toLowerCase() === 'plan') {
+      return planLabel(e.balance);
+    }
+    return e.currency ? `${e.balance} ${e.currency}` : String(e.balance);
+  }
+  if (e.limit !== undefined && e.used !== undefined) {
+    const remaining = e.limit - e.used;
+    return e.currency ? `${remaining} ${e.currency}` : String(remaining);
+  }
+  if (e.limit !== undefined) return e.currency ? `${e.limit} ${e.currency}` : String(e.limit);
   return '—';
 }
 
-function WindowRow({ w }: { w: ProviderUsageWindow }) {
+function planLabel(value: string): string {
+  const labels: Record<string, string> = {
+    TYPE_FREE: 'Free',
+    TYPE_PURCHASE: 'Purchased',
+    TYPE_SUBSCRIPTION: 'Subscription',
+    TYPE_TRIAL: 'Trial',
+  };
+  if (labels[value]) return labels[value];
+  if (!value.startsWith('TYPE_')) return value;
+  return value
+    .replace(/^TYPE_/, '')
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function WindowRow({ w, now }: { w: ProviderUsageWindow; now: Date }) {
   const pct = Math.round(w.remainingPercent);
   return (
     <div className="space-y-0.5">
@@ -75,7 +101,7 @@ function WindowRow({ w }: { w: ProviderUsageWindow }) {
           </span>
           {w.resetsAt && (
             <span className="font-sans text-[10px] text-text-subtle">
-              {formatReset(w.resetsAt)}
+              {formatReset(w.resetsAt, now)}
             </span>
           )}
         </div>
@@ -91,7 +117,7 @@ function WindowRow({ w }: { w: ProviderUsageWindow }) {
   );
 }
 
-function ProviderBlock({ row }: { row: ProviderUsageRow }) {
+function ProviderBlock({ row, now }: { row: ProviderUsageRow; now: Date }) {
   const isAvailable = row.status === 'available';
   return (
     <div className={isAvailable ? '' : 'opacity-50'}>
@@ -111,7 +137,7 @@ function ProviderBlock({ row }: { row: ProviderUsageRow }) {
       {isAvailable ? (
         <div className="space-y-2.5">
           {row.windows.map((w, i) => (
-            <WindowRow key={i} w={w} />
+            <WindowRow key={i} w={w} now={now} />
           ))}
           {row.extras.length > 0 && (
             <div className="flex flex-wrap gap-x-4 gap-y-0.5">
@@ -206,11 +232,7 @@ export default function ServerPanel({ onClose }: Props) {
   });
 
   // Ticks every minute — keeps uptime, reset countdowns, and "updated X ago" current.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
 
   // Esc to close
   useEffect(() => {
@@ -371,7 +393,7 @@ export default function ServerPanel({ onClose }: Props) {
                 return visible.length > 0 ? (
                   <div className="space-y-5">
                     {visible.map((row) => (
-                      <ProviderBlock key={row.provider} row={row} />
+                      <ProviderBlock key={row.provider} row={row} now={now} />
                     ))}
                     {visible.some((r) => r.source === 'private-api') && (
                       <p className="font-mono text-[9px] text-text-subtle opacity-50">
