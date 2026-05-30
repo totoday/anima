@@ -4,6 +4,7 @@ import { ChevronLeft, Search, X } from 'lucide-react';
 import { fetchKb, fetchKbFile, fetchKbTree } from '@/api/kb';
 import { useNavigate, useParams } from 'react-router-dom';
 import { buildKbPath } from '@/lib/url-state';
+import { formatBytes } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 import { TreeRow, ancestorsOf, matchesFilter } from './FileTree';
@@ -248,10 +249,15 @@ export default function Kb() {
 
         {/* Right-side header controls — desktop only */}
         {filePath && (
-          <div className="ml-auto hidden md:flex min-w-0 items-center gap-1">
+          <div className="ml-auto hidden md:flex min-w-0 items-center gap-2">
             <div className="min-w-0 mr-1">
               <BreadcrumbPath filePath={filePath} />
             </div>
+            {file && !fileLoading && (
+              <span className="chrome shrink-0 text-[11px] text-text-subtle">
+                {formatBytes(file.size)}
+              </span>
+            )}
             <FileToolbar id={id} filePath={filePath} />
             <TocButton entries={toc} />
           </div>
@@ -379,6 +385,11 @@ export default function Kb() {
               {/* Mobile file toolbar */}
               <div className="flex min-h-[44px] shrink-0 items-center gap-2 border-b border-border-soft px-4 md:hidden">
                 <BreadcrumbPath filePath={filePath} />
+                {file && !fileLoading && (
+                  <span className="chrome shrink-0 text-[11px] text-text-subtle">
+                    {formatBytes(file.size)}
+                  </span>
+                )}
                 <div className="ml-auto flex items-center gap-0.5">
                   <FileToolbar id={id} filePath={filePath} />
                   <TocButton entries={toc} />
