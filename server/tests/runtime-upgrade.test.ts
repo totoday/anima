@@ -13,7 +13,7 @@ import {
   runRuntimeUpgradeWorker,
   RuntimeUpgradeConflictError,
   RuntimeUpgradeService,
-} from '../runtime/runtime-upgrade.js';
+} from '../runtime-management/runtime-upgrade.js';
 
 test('runtime version compare handles prerelease canaries', () => {
   assert.equal(compareRuntimeVersions('0.1.1-canary.5.1.723b529', '0.1.1-canary.4.1.0688e3f') > 0, true);

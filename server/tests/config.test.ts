@@ -14,7 +14,7 @@ import {
   packageSpecifier,
   readManagedRuntimeStatus,
   resolveManagedAnimaHome,
-} from '../runtime/managed-runtime.js';
+} from '../runtime-management/managed-runtime.js';
 import { AgentCreateRequest, PROVIDER_IDLE_TIMEOUT_MS_DEFAULT } from '../../shared/agent-config.js';
 import { providerCatalogEntry } from '../../shared/provider-catalog.js';
 import { withAnimaHome } from './anima-home.js';

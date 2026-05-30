@@ -12,12 +12,12 @@ import {
   resolveManagedAnimaHome,
   type RuntimeInstallOptions,
   type RuntimeStatus,
-} from '../runtime/managed-runtime.js';
+} from '../runtime-management/managed-runtime.js';
 import {
   RuntimeUpgradeService,
   runRuntimeUpgradeWorker,
   type RuntimeUpgradeWorkerOptions,
-} from '../runtime/runtime-upgrade.js';
+} from '../runtime-management/runtime-upgrade.js';
 import { RuntimeReleaseTrack, type RuntimeUpgradeStatusResponse } from '../../shared/runtime-upgrade.js';
 
 interface RuntimeCliOptions {
